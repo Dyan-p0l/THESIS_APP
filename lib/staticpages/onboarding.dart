@@ -12,16 +12,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final LiquidController _controller = LiquidController();
   int _currentPage = 0;
 
-  final pages = [
-    OnboardingScreen1(),
-    OnboardingScreen2(),
-    OnboardingScreen3(),
-  ];
+  final pages = [OnboardingScreen1(), OnboardingScreen2(), OnboardingScreen3()];
 
   final List<Color> indicatorColor = [
     Color(0XFF56DFB1),
     Color(0XFF56DFB1),
-    Color(0XFF56DFB1)
+    Color(0XFF56DFB1),
   ];
 
   @override
@@ -30,7 +26,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       body: Stack(
         children: [
           LiquidSwipe(
-            pages: pages, 
+            pages: pages,
             enableLoop: false,
             fullTransitionValue: 600,
             waveType: WaveType.liquidReveal,
@@ -75,14 +71,14 @@ class OnboardingScreen1 extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Color.fromARGB(255, 1, 27, 37), 
+      color: Color.fromARGB(255, 1, 27, 37),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            const Padding(padding: EdgeInsets.all(40), 
-              child:
-              Column(
+            const Padding(
+              padding: EdgeInsets.all(40),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(height: 40),
@@ -125,9 +121,9 @@ class OnboardingScreen1 extends StatelessWidget {
                       color: Color(0XFFFFFFFF),
                     ),
                     textAlign: TextAlign.left,
-                  )
+                  ),
                 ],
-              ),  
+              ),
             ),
             const SizedBox(height: 10),
             Image.asset(
@@ -153,9 +149,9 @@ class OnboardingScreen2 extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            const Padding(padding: EdgeInsets.all(40), 
-              child:
-              Column(
+            const Padding(
+              padding: EdgeInsets.all(40),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(height: 40),
@@ -198,9 +194,9 @@ class OnboardingScreen2 extends StatelessWidget {
                       color: Color(0XFF077F8E),
                     ),
                     textAlign: TextAlign.left,
-                  )
+                  ),
                 ],
-              ),  
+              ),
             ),
             const SizedBox(height: 10),
             Image.asset(
@@ -242,7 +238,7 @@ class OnboardingScreen3 extends StatelessWidget {
             const SizedBox(height: 50),
             ElevatedButton(
               onPressed: () {
-                Navigator.pushNamed(context, '/summary');
+                Navigator.pushNamed(context, '/homepage');
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0XFF02032D),

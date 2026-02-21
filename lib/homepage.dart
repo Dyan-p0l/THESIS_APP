@@ -12,12 +12,8 @@ class _HomepageState extends State<Homepage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFF021E28),
-      appBar: AppBar(
-        title: const Text('Connectivity Status'),
-      ),
-      body: const Center(
-        child: Text('Welcome to the Homepage!'),
-      ),
+      appBar: AppBar(title: const Text('Connectivity Status')),
+      body: const Center(child: Text('Welcome to the Homepage!')),
     );
   }
 }
