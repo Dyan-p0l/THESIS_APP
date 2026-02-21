@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'staticpages/onboarding.dart';
 import 'homepage.dart';
+import 'connectivity/connectivity.dart';
 
 void main() {
   runApp(const MyApp());
@@ -16,12 +17,12 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const OnboardingScreen(),
+      home: const ConnectivityScreen(),
       routes: {
         '/onboarding': (context) => const OnboardingScreen(),
         '/homepage': (context) => const Homepage(),
+        '/connectivity': (context) => const ConnectivityScreen(),
       },
     );
   }
 }
-
