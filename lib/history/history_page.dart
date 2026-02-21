@@ -49,15 +49,40 @@ class _HistoryPageState extends State<HistoryPage> {
   @override
   Widget build(BuildContext context) {
     final grouped = groupByDate(sortedReadings);
+    const Color darkTeal = Color(0xFF03313E); // Primary dark color from image
 
     return Scaffold(
-      backgroundColor: const Color(0xFF021E28),
+      backgroundColor: Colors.white, // Changed to white background
       appBar: AppBar(
-        backgroundColor: const Color(0xFF021E28),
+        backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text("Readings History"),
+        centerTitle: true,
+        leadingWidth: 70,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
+          child: Container(
+            decoration: BoxDecoration(
+              color: darkTeal,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Icon(
+              Icons.keyboard_double_arrow_left,
+              color: Colors.cyanAccent,
+              size: 28,
+            ),
+          ),
+        ),
+        title: Text(
+          "Readings History",
+          style: TextStyle(
+            color: darkTeal,
+            fontWeight: FontWeight.w800,
+            fontSize: 26,
+          ),
+        ),
       ),
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildSortSelector(),
           Expanded(
@@ -69,24 +94,29 @@ class _HistoryPageState extends State<HistoryPage> {
                     ),
                   )
                 : ListView(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     children: grouped.entries.map((entry) {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            entry.key,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Text(
+                              entry.key,
+                              style: const TextStyle(
+                                color: Color(0xFF1E293B), // Dark text for date
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 12),
                           ...entry.value
                               .map((reading) => _buildReadingCard(reading))
                               .toList(),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 12),
                         ],
                       );
                     }).toList(),
@@ -99,21 +129,51 @@ class _HistoryPageState extends State<HistoryPage> {
 
   Widget _buildSortSelector() {
     return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: SortType.values.map((type) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: ChoiceChip(
-              label: Text(type.name.toUpperCase()),
-              selected: selectedSort == type,
-              onSelected: (_) {
-                setState(() => selectedSort = type);
-              },
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Sort by:",
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF03313E),
             ),
-          );
-        }).toList(),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: SortType.values.map((type) {
+              final isSelected = selectedSort == type;
+              return Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: ChoiceChip(
+                  label: Text(type.name.toUpperCase()),
+                  selected: isSelected,
+                  showCheckmark: false,
+                  labelStyle: TextStyle(
+                    color: isSelected ? Colors.white : Colors.black87,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                  backgroundColor: const Color(
+                    0xFFD1D5DB,
+                  ), // Light grey for unselected
+                  selectedColor: const Color(
+                    0xFF03313E,
+                  ), // Dark teal for selected
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: BorderSide.none,
+                  ),
+                  onSelected: (_) {
+                    setState(() => selectedSort = type);
+                  },
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }
@@ -122,61 +182,140 @@ class _HistoryPageState extends State<HistoryPage> {
     Color statusColor;
     IconData icon;
 
+    // Matching the icons and colors as closely as possible to the mockup
     switch (reading.category) {
       case FreshnessCategory.fresh:
         statusColor = Colors.tealAccent;
-        icon = Icons.check_circle;
+        icon = Icons.health_and_safety;
         break;
       case FreshnessCategory.moderate:
         statusColor = Colors.orangeAccent;
-        icon = Icons.warning;
+        icon = Icons.health_and_safety;
         break;
       case FreshnessCategory.spoiled:
         statusColor = Colors.redAccent;
-        icon = Icons.error;
+        icon = Icons.report_problem_outlined;
         break;
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A2F3C),
-        borderRadius: BorderRadius.circular(16),
+        color: const Color(0xFF042F3C), // Deep navy/teal card background
+        borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(
-        children: [
-          Icon(icon, color: statusColor),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "${reading.capacitance.toStringAsFixed(0)} pF",
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            // 1. Icon Section
+            Icon(icon, color: statusColor, size: 38),
+            const SizedBox(width: 16),
+
+            // 2. Capacitance & Time Section
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        reading.capacitance.toStringAsFixed(0),
+                        style: const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const Text(
+                        "pF",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                Text(
-                  reading.sampleLabel,
-                  style: const TextStyle(color: Colors.cyanAccent),
-                ),
-                Text(
-                  DateFormat('hh:mm a').format(reading.timestamp),
-                  style: const TextStyle(color: Colors.grey),
-                ),
-                Text(reading.id, style: const TextStyle(color: Colors.grey)),
-              ],
+                  Text(
+                    DateFormat(
+                      'hh:mma',
+                    ).format(reading.timestamp).toLowerCase(),
+                    style: const TextStyle(
+                      color: Colors.cyanAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Text(
-            reading.category.name.toUpperCase(),
-            style: TextStyle(color: statusColor, fontWeight: FontWeight.bold),
-          ),
-        ],
+
+            // 3. Sample Label & ID Section
+            Expanded(
+              flex: 4,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    reading.sampleLabel,
+                    style: const TextStyle(
+                      color: Colors.cyanAccent,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    reading.id,
+                    style: const TextStyle(color: Colors.white, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+
+            // 4. Vertical Divider
+            const VerticalDivider(
+              color: Colors.white70,
+              thickness: 1,
+              width: 24,
+            ),
+
+            // 5. Category Status Section
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    "CATEGORY:",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    reading.category.name.toUpperCase(),
+                    style: TextStyle(
+                      color: statusColor,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

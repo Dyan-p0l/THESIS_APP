@@ -16,8 +16,9 @@ class MyApp extends StatelessWidget {
       title: 'Flutter Demo',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        fontFamily: 'Inter',
       ),
-      home: const OnboardingScreen(),
+      home: const HistoryPage(),
       routes: {
         '/onboarding': (context) => const OnboardingScreen(),
         '/homepage': (context) => const Homepage(),
