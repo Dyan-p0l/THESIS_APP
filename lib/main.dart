@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'staticpages/onboarding.dart';
 import 'homepage.dart';
 import 'history/history_page.dart';
+import 'connectivity/connectivity.dart';
 
 void main() {
   runApp(const MyApp());
@@ -23,6 +24,7 @@ class MyApp extends StatelessWidget {
         '/onboarding': (context) => const OnboardingScreen(),
         '/homepage': (context) => const Homepage(),
         '/history': (context) => const HistoryPage(),
+        '/connectivity': (context) => const ConnectivityScreen(),
       },
     );
   }
