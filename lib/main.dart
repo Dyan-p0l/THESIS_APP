@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'staticpages/onboarding.dart';
 import 'homepage.dart';
+import 'analysis/analysis.dart';
 
 void main() {
   runApp(const MyApp());
@@ -20,8 +21,8 @@ class MyApp extends StatelessWidget {
       routes: {
         '/onboarding': (context) => const OnboardingScreen(),
         '/homepage': (context) => const Homepage(),
+        '/analysis': (context) => const AnalysisScreen(),
       },
     );
   }
 }
-

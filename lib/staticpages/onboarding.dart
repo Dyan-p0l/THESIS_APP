@@ -20,7 +20,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   final List<Color> indicatorColor = [
     Color(0XFF56DFB1),
-    Color(0XFF56DFB1),
+    Color(0XFF012532),
     Color(0XFF56DFB1)
   ];
 
@@ -131,7 +131,7 @@ class OnboardingScreen1 extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Image.asset(
-              'assets/images/onboardingpage/fish_vector_dark.png',
+              'assets/images/onboardingpage/fish_anim.gif',
               width: 300,
               height: 300,
             ),
@@ -204,9 +204,9 @@ class OnboardingScreen2 extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Image.asset(
-              'assets/images/onboardingpage/fish_vector_light.png',
-              width: 300,
-              height: 300,
+              'assets/images/onboardingpage/device_animation.gif',
+              width: 500,
+              height: 500,
             ),
           ],
         ),
@@ -224,12 +224,12 @@ class OnboardingScreen3 extends StatelessWidget {
       color: Color.fromARGB(255, 116, 246, 202), // Page 2 background
       child: Center(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.start,
           children: [
             const Padding(
               padding: EdgeInsets.all(30),
               child: Text(
-                'Easily manage your expenses and stay in control of your budget.',
+                '',
                 style: TextStyle(
                   fontFamily: 'Inter',
                   fontWeight: FontWeight.w600,
