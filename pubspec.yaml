@@ -31,11 +31,10 @@ dependencies:
   flutter:
     sdk: flutter
   liquid_swipe: ^3.1.0
-
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   intl: ^0.18.0
+  flutter_blue_plus: ^1.32.0
+  permission_handler: ^11.0.0
 
 dev_dependencies:
   flutter_test:
