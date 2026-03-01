@@ -21,7 +21,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFF020733),
+      backgroundColor: Color(0XFF012532),
       body: SafeArea(
         child: Column(
           children: [
