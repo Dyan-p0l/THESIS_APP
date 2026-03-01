@@ -12,11 +12,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final LiquidController _controller = LiquidController();
   int _currentPage = 0;
 
-  final pages = [
-    OnboardingScreen1(),
-    OnboardingScreen2(),
-    OnboardingScreen3(),
-  ];
+  final pages = [OnboardingScreen1(), OnboardingScreen2(), OnboardingScreen3()];
 
   final List<Color> indicatorColor = [
     Color(0XFF012532),
@@ -30,7 +26,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       body: Stack(
         children: [
           LiquidSwipe(
-            pages: pages, 
+            pages: pages,
             enableLoop: false,
             fullTransitionValue: 600,
             waveType: WaveType.liquidReveal,

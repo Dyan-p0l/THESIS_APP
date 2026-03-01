@@ -111,9 +111,7 @@ class _ConnectivityScreenState extends State<ConnectivityScreen> {
               // ======= VIEW HISTORY button =======
               TextButton.icon(
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("View History pressed")),
-                  );
+                  Navigator.pushNamed(context, '/history');
                 },
                 icon: const Icon(Icons.history, color: Colors.white),
                 label: const Text(
