@@ -49,10 +49,10 @@ class _HistoryPageState extends State<HistoryPage> {
   @override
   Widget build(BuildContext context) {
     final grouped = groupByDate(sortedReadings);
-    const Color darkTeal = Color(0xFF03313E); // Primary dark color from image
+    const Color darkTeal = Color(0xFF03313E); 
 
     return Scaffold(
-      backgroundColor: Colors.white, // Changed to white background
+      backgroundColor: Colors.white, 
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -60,15 +60,20 @@ class _HistoryPageState extends State<HistoryPage> {
         leadingWidth: 70,
         leading: Padding(
           padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
-          child: Container(
-            decoration: BoxDecoration(
-              color: darkTeal,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Icon(
-              Icons.keyboard_double_arrow_left,
-              color: Colors.cyanAccent,
-              size: 28,
+          child: GestureDetector(
+            onTap: () {
+              Navigator.pushNamed(context, '/homepage');
+            },
+            child: Container(
+              decoration: BoxDecoration(
+                color: darkTeal,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(
+                Icons.keyboard_double_arrow_left,
+                color: Colors.cyanAccent,
+                size: 28,
+              ),
             ),
           ),
         ),

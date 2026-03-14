@@ -15,9 +15,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final pages = [OnboardingScreen1(), OnboardingScreen2(), OnboardingScreen3()];
 
   final List<Color> indicatorColor = [
+    Color(0XFF012532),
     Color(0XFF56DFB1),
-    Color(0XFF56DFB1),
-    Color(0XFF56DFB1),
+    Color(0XFF012532)
   ];
 
   @override
@@ -71,66 +71,38 @@ class OnboardingScreen1 extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Color.fromARGB(255, 1, 27, 37),
+      color: Color(0XFF00EAD3), 
       child: Center(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Padding(
-              padding: EdgeInsets.all(40),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(height: 40),
-                  Text(
-                    'Assess Fish Freshness non-invasively using',
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.bold,
-                      fontSize: 24,
-                      color: Color(0XFF1ABEF7),
-                    ),
-                    textAlign: TextAlign.left,
-                  ),
-                  Text(
-                    'AI-powered',
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.bold,
-                      fontSize: 24,
-                      color: Color(0XFF40E0D0),
-                    ),
-                    textAlign: TextAlign.left,
-                  ),
-                  Text(
-                    'Bio-Capacitance',
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.bold,
-                      fontSize: 24,
-                      color: Color(0XFF8CFFF4),
-                    ),
-                    textAlign: TextAlign.left,
-                  ),
-                  Text(
-                    'Sensing',
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.bold,
-                      fontSize: 24,
-                      color: Color(0XFFFFFFFF),
-                    ),
-                    textAlign: TextAlign.left,
-                  ),
-                ],
+            const SizedBox(height: 10),
+            Image.asset(
+              'assets/images/onboardingpage/presko_logo_circular.png',
+              width: 338,
+              height: 338,
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'PRESKO', 
+              style: TextStyle(
+                fontFamily: 'Rebrand',
+                fontWeight: FontWeight.w800,
+                fontSize: 75,
+                color: Colors.white
               ),
             ),
             const SizedBox(height: 10),
-            Image.asset(
-              'assets/images/onboardingpage/fish_vector_dark.png',
-              width: 300,
-              height: 300,
+            const Text(
+              'Where Bio-Sensing\nMeets Intelligence', 
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w700,
+                fontSize: 24,
+                color: Colors.black
+              ),
             ),
+
           ],
         ),
       ),
@@ -144,68 +116,61 @@ class OnboardingScreen2 extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Color.fromARGB(255, 116, 246, 202),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(40),
+      color: const Color(0XFF00EAD3), 
+      child: Stack(
+        children: [
+
+          Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(height: 40),
-                  Text(
-                    'Assess Fish Freshness non-invasively using',
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.bold,
-                      fontSize: 24,
-                      color: Color(0XFF000000),
+                  Center(
+                    child: Image.asset(
+                      "assets/images/onboardingpage/presko_logo_dark.png",
+                      width: 90,
                     ),
-                    textAlign: TextAlign.left,
                   ),
-                  Text(
-                    'AI-powered',
+                  const SizedBox(height: 40),
+                  const Text(
+                    "Transforming fish\nfreshness assessment\nthrough bio-capacitance\nanalysis.",
                     style: TextStyle(
                       fontFamily: 'Inter',
-                      fontWeight: FontWeight.bold,
-                      fontSize: 24,
-                      color: Color(0XFF034C65),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 28,
+                      color: Color(0XFF012532),
+                      height: 1.3,
                     ),
-                    textAlign: TextAlign.left,
-                  ),
-                  Text(
-                    'Bio-Capacitance',
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.bold,
-                      fontSize: 24,
-                      color: Color(0XFF08809B),
-                    ),
-                    textAlign: TextAlign.left,
-                  ),
-                  Text(
-                    'Sensing',
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.bold,
-                      fontSize: 24,
-                      color: Color(0XFF077F8E),
-                    ),
-                    textAlign: TextAlign.left,
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 10),
-            Image.asset(
-              'assets/images/onboardingpage/fish_vector_light.png',
-              width: 300,
-              height: 300,
+          ),
+
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: ClipPath(
+              clipper: WaveClipper(),
+              child: Container(
+                height: MediaQuery.of(context).size.height * 0.55,
+                color: const Color(0XFF012532),
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 40),
+                    child: Image.asset(
+                      "assets/images/onboardingpage/fish_anim.gif",
+                      width: 280,
+                      fit: BoxFit.contain,
+                      gaplessPlayback: true,
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -217,46 +182,111 @@ class OnboardingScreen3 extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Color.fromARGB(255, 116, 246, 202), // Page 2 background
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(30),
-              child: Text(
-                'Easily manage your expenses and stay in control of your budget.',
-                style: TextStyle(
-                  fontFamily: 'Inter',
-                  fontWeight: FontWeight.w600,
-                  color: Color(0XFF02032D),
-                  fontSize: 26,
-                ),
-                textAlign: TextAlign.left,
+      color: const Color(0XFF012532), 
+      child: Stack(
+        children: [
+
+          Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Image.asset(
+                      "assets/images/onboardingpage/presko_logo_light.png",
+                      width: 90,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Image.asset(
+                    "assets/images/onboardingpage/device_animation.gif",
+                    width: 350,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                  )
+                ],
               ),
             ),
-            const SizedBox(height: 50),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pushNamed(context, '/homepage');
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0XFF02032D),
-                foregroundColor: const Color(0XFF56DFB1),
-                minimumSize: const Size(296, 58),
-              ),
-              child: const Text(
-                'Get Started',
-                style: TextStyle(
-                  fontFamily: 'Inter',
-                  fontWeight: FontWeight.bold,
-                  fontSize: 22,
+          ),
+
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: ClipPath(
+              clipper: WaveClipper(),
+              child: Container(
+                height: MediaQuery.of(context).size.height * 0.55,
+                color: const Color(0XFF00EAD3),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 40),
+                        child: const Text(
+                          "Designed to capture\nnatural surface\nsignals safely and\naccurately.",
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontWeight: FontWeight.w700,
+                            fontSize: 28,
+                            color: Color(0XFF012532),
+                            height: 1.3,
+                          ),  
+                        ),
+                      ),
+                      const SizedBox(height: 80),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.pushNamed(context, '/homepage');
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0XFF012532),
+                          foregroundColor: const Color(0XFF56DFB1),
+                          minimumSize: const Size(296, 58),
+                        ),
+                        child: const Text(
+                          'Get Started',
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontWeight: FontWeight.bold,
+                            fontSize: 22,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ), 
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+}
+
+
+
+class WaveClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    var path = Path();
+    path.lineTo(0, 60); 
+    path.quadraticBezierTo(
+      size.width * 0.25, 0, 
+      size.width * 0.5, 60,
+    );
+    path.quadraticBezierTo(
+      size.width * 0.75, 120,
+      size.width, 60,
+    );
+    path.lineTo(size.width, size.height); 
+    path.lineTo(0, size.height); 
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }

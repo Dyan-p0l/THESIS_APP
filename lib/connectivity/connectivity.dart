@@ -83,14 +83,11 @@ class _ConnectivityScreenState extends State<ConnectivityScreen> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    // TODO: hook this to your assessment page later
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Start Assessment pressed")),
-                    );
+                    Navigator.pushNamed(context, '/analysis');
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: accent,
-                    foregroundColor: const Color(0xFF021E28),
+                    foregroundColor: const Color(0XFF012532),
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -114,9 +111,7 @@ class _ConnectivityScreenState extends State<ConnectivityScreen> {
               // ======= VIEW HISTORY button =======
               TextButton.icon(
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("View History pressed")),
-                  );
+                  Navigator.pushNamed(context, '/history');
                 },
                 icon: const Icon(Icons.history, color: Colors.white),
                 label: const Text(
