@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../services/ble_service.dart';
 
 class ConnectivityScreen extends StatefulWidget {
   const ConnectivityScreen({super.key});
@@ -9,28 +10,29 @@ class ConnectivityScreen extends StatefulWidget {
 }
 
 class _ConnectivityScreenState extends State<ConnectivityScreen> {
-  // ======= DYNAMIC VALUES (defaults for now) =======
-  bool esp32Connected = true; // default: connected
-  int rssiDbm = -40; // default RSSI
-  // You can change these later when you integrate BLE.
+  final BleService bleService = BleService();
 
-  // Optional: quality label logic (simple defaults you can tweak later)
-  String get signalLabel {
+  @override
+  void initState() {
+    super.initState();
+    bleService.startAutoConnect();
+  }
+
+  String _signalLabel(int rssiDbm) {
     if (rssiDbm >= -60) return "EXCELLENT";
     if (rssiDbm >= -70) return "GOOD";
     if (rssiDbm >= -85) return "FAIR";
     return "POOR";
   }
 
-  Color get signalColor {
+  Color _signalColor(int rssiDbm) {
     if (rssiDbm >= -60) return Colors.green;
     if (rssiDbm >= -70) return Colors.lightGreen;
     if (rssiDbm >= -85) return Colors.orange;
     return Colors.red;
   }
 
-  // Map RSSI (roughly -100..-40) -> progress 0..1
-  double get ringProgress {
+  double _ringProgress(int rssiDbm) {
     const int minDbm = -100;
     const int maxDbm = -40;
     final clamped = rssiDbm.clamp(minDbm, maxDbm);
@@ -48,86 +50,105 @@ class _ConnectivityScreenState extends State<ConnectivityScreen> {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const SizedBox(height: 10),
-              const Text(
-                "Connectivity Status",
-                style: TextStyle(
-                  fontFamily: "Inter",
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  color: textCyan,
-                ),
-              ),
-              const SizedBox(height: 28),
+          child: StreamBuilder<bool>(
+            stream: bleService.connectionStream,
+            initialData: bleService.isConnected,
+            builder: (context, connSnap) {
+              final connected = connSnap.data ?? false;
 
-              // ======= Connected / Disconnected row =======
-              _ConnectionRow(connected: esp32Connected, accent: accent),
+              return StreamBuilder<int>(
+                stream: bleService.rssiStream,
+                initialData: -100,
+                builder: (context, rssiSnap) {
+                  final rssiDbm = rssiSnap.data ?? -100;
+                  final label = _signalLabel(rssiDbm);
+                  final signalColor = _signalColor(rssiDbm);
+                  final progress = _ringProgress(rssiDbm);
 
-              const SizedBox(height: 34),
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const SizedBox(height: 10),
+                      const Text(
+                        "Connectivity Status",
+                        style: TextStyle(
+                          fontFamily: "Inter",
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                          color: textCyan,
+                        ),
+                      ),
+                      const SizedBox(height: 28),
 
-              // ======= Meter (Ring Gauge) =======
-              _SignalGauge(
-                progress: ringProgress,
-                rssiDbm: rssiDbm,
-                label: signalLabel,
-                ringColor: signalColor,
-              ),
+                      _ConnectionRow(connected: connected, accent: accent),
 
-              const Spacer(),
+                      const SizedBox(height: 34),
 
-              // ======= START ASSESSMENT button =======
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/analysis');
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: accent,
-                    foregroundColor: const Color(0XFF012532),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: const Text(
-                    "START\nASSESSMENT",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontFamily: "Inter",
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      height: 1.15,
-                    ),
-                  ),
-                ),
-              ),
+                      _SignalGauge(
+                        progress: progress,
+                        rssiDbm: rssiDbm,
+                        label: label,
+                        ringColor: signalColor,
+                      ),
 
-              const SizedBox(height: 18),
+                      const Spacer(),
 
-              // ======= VIEW HISTORY button =======
-              TextButton.icon(
-                onPressed: () {
-                  Navigator.pushNamed(context, '/history');
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: connected
+                              ? () {
+                                  Navigator.pushNamed(context, '/analysis');
+                                }
+                              : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: accent,
+                            foregroundColor: const Color(0XFF012532),
+                            disabledBackgroundColor: Colors.grey.shade700,
+                            disabledForegroundColor: Colors.white70,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: const Text(
+                            "START\nASSESSMENT",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontFamily: "Inter",
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              height: 1.15,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      TextButton.icon(
+                        onPressed: () {
+                          Navigator.pushNamed(context, '/history');
+                        },
+                        icon: const Icon(Icons.history, color: Colors.white),
+                        label: const Text(
+                          "VIEW HISTORY",
+                          style: TextStyle(
+                            fontFamily: "Inter",
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+                    ],
+                  );
                 },
-                icon: const Icon(Icons.history, color: Colors.white),
-                label: const Text(
-                  "VIEW HISTORY",
-                  style: TextStyle(
-                    fontFamily: "Inter",
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 10),
-            ],
+              );
+            },
           ),
         ),
       ),
@@ -175,7 +196,7 @@ class _ConnectionRow extends StatelessWidget {
 }
 
 class _SignalGauge extends StatelessWidget {
-  final double progress; // 0..1
+  final double progress;
   final int rssiDbm;
   final String label;
   final Color ringColor;
@@ -281,10 +302,8 @@ class _RingPainter extends CustomPainter {
       ..strokeWidth = 14
       ..strokeCap = StrokeCap.round;
 
-    // Full circle base
     canvas.drawCircle(center, radius, basePaint);
 
-    // Progress arc (start near top-right like your mock)
     final startAngle = -math.pi / 2 + 0.35;
     final sweepAngle = (2 * math.pi - 0.7) * progress;
 
