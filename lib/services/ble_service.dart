@@ -1,11 +1,35 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
+
+class AssessmentResult {
+  final int seq;
+  final int
+  elapsedMs; // ESP32 packet doesn't include elapsed; kept for compatibility (0)
+  final double ide1Pf;
+  final double ide2Pf;
+  final double finalPf; // one value for UI
+  final bool
+  stable; // stableNow bit0 (on FINAL packet this should represent success/fail)
+  final int flags;
+
+  AssessmentResult({
+    required this.seq,
+    required this.elapsedMs,
+    required this.ide1Pf,
+    required this.ide2Pf,
+    required this.finalPf,
+    required this.stable,
+    required this.flags,
+  });
+}
 
 class BleService {
   // Singleton
   static final BleService _instance = BleService._internal();
   factory BleService() => _instance;
+
   BleService._internal() {
     FlutterBluePlus.adapterState.listen((state) {
       if (state == BluetoothAdapterState.on && _device == null) {
@@ -14,37 +38,111 @@ class BleService {
     });
   }
 
-  // Note: We no longer need a local instance variable for FlutterBluePlus
+  // ===== Device / GATT IDs (match ESP32) =====
+  final Guid serviceUuid = Guid("6a6e2d3b-2c5f-4d3a-9b41-2c8a9c0a9b10");
+  final Guid packetUuid = Guid(
+    "6a6e2d3b-2c5f-4d3a-9b41-2c8a9c0a9b11",
+  ); // Notify
+  final Guid controlUuid = Guid(
+    "6a6e2d3b-2c5f-4d3a-9b41-2c8a9c0a9b12",
+  ); // Write START/STOP
+  final String targetDeviceName = "FDC1004_IDE";
 
   BluetoothDevice? _device;
-  BluetoothCharacteristic? _characteristic;
+  BluetoothCharacteristic? _pktChar;
+  BluetoothCharacteristic? _ctrlChar;
 
-  StreamSubscription? _scanSubscription;
-  StreamSubscription? _connectionSubscription;
-  StreamSubscription? _notificationSubscription;
-
-  final Guid serviceUuid = Guid("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
-  final Guid characteristicUuid = Guid("6e400002-b5a3-f393-e0a9-e50e24dcca9e");
-  final String targetDeviceName = "ESP32_CapSensor_Test";
+  StreamSubscription? _scanSub;
+  StreamSubscription? _connSub;
+  StreamSubscription? _notifySub;
 
   final StreamController<double> _capacitanceController =
       StreamController.broadcast();
   final StreamController<bool> _connectionController =
       StreamController.broadcast();
+  final StreamController<bool> _stableController = StreamController.broadcast();
 
   Stream<double> get capacitanceStream => _capacitanceController.stream;
   Stream<bool> get connectionStream => _connectionController.stream;
+  Stream<bool> get stableStream => _stableController.stream;
 
   bool _isConnecting = false;
 
-  Future<void> startAutoConnect() async {
-    // Check if already scanning or connecting
-    if (FlutterBluePlus.isScanningNow || _isConnecting) return;
+  Completer<AssessmentResult>? _pendingFinal;
+  Timer? _finalTimeout;
 
+  // ===== ESP32 flags bits =====
+  static const int FLAG_STABLE_NOW = 1 << 0;
+  static const int FLAG_IDE1_VALID = 1 << 1;
+  static const int FLAG_IDE2_VALID = 1 << 2;
+  static const int FLAG_FINAL = 1 << 5;
+
+  // ===== Public API =====
+
+  Future<void> startAutoConnect() async {
+    if (FlutterBluePlus.isScanningNow || _isConnecting) return;
     await _requestPermissions();
     await _ensureBluetoothOn();
     _startScan();
   }
+
+  /// Call this when user presses Start Assessment.
+  /// It writes START (0x01) to ESP32 control characteristic, then waits for FINAL (flags bit5).
+  Future<AssessmentResult> startAssessment({
+    Duration timeout = const Duration(seconds: 25),
+  }) async {
+    if (!isConnected) {
+      throw StateError("Not connected to device");
+    }
+    if (_ctrlChar == null) {
+      throw StateError("Control characteristic not found");
+    }
+
+    // Clear any previous stable UI indicator during idle
+    _stableController.add(false);
+
+    // Start waiting for FINAL first (so you don't miss a very fast FINAL)
+    final future = waitForFinal(timeout: timeout);
+
+    // Send START command (0x01)
+    // Use withoutResponse if available; if it fails, fall back to normal write.
+    try {
+      await _ctrlChar!.write([0x01], withoutResponse: true);
+    } catch (_) {
+      await _ctrlChar!.write([0x01], withoutResponse: false);
+    }
+
+    return future;
+  }
+
+  /// Optional: cancel measurement early (STOP=0x00).
+  Future<void> stopAssessment() async {
+    if (_ctrlChar == null) return;
+    try {
+      await _ctrlChar!.write([0x00], withoutResponse: true);
+    } catch (_) {
+      await _ctrlChar!.write([0x00], withoutResponse: false);
+    }
+  }
+
+  bool get isConnected => _device != null;
+
+  Future<void> disconnect() async {
+    await _device?.disconnect();
+    _connectionController.add(false);
+    _cleanupConnection();
+  }
+
+  void dispose() {
+    _scanSub?.cancel();
+    _connSub?.cancel();
+    _notifySub?.cancel();
+    _capacitanceController.close();
+    _connectionController.close();
+    _stableController.close();
+  }
+
+  // ===== Internals =====
 
   Future<void> _requestPermissions() async {
     await [
@@ -55,13 +153,9 @@ class BleService {
   }
 
   Future<void> _ensureBluetoothOn() async {
-    BluetoothAdapterState state = await FlutterBluePlus.adapterState.first;
-
+    final state = await FlutterBluePlus.adapterState.first;
     if (state != BluetoothAdapterState.on) {
-      // Show system popup to enable Bluetooth
       await FlutterBluePlus.turnOn();
-
-      // Wait until Bluetooth becomes ON
       await FlutterBluePlus.adapterState
           .where((s) => s == BluetoothAdapterState.on)
           .first;
@@ -69,19 +163,16 @@ class BleService {
   }
 
   void _startScan() async {
-    // Corrected: startScan is a static method
     await FlutterBluePlus.startScan(
       timeout: const Duration(seconds: 15),
       withServices: [serviceUuid],
     );
 
-    // Corrected: scanResults is a static getter
-    _scanSubscription = FlutterBluePlus.scanResults.listen((results) async {
-      for (ScanResult r in results) {
-        // Use platformName in newer versions
+    _scanSub = FlutterBluePlus.scanResults.listen((results) async {
+      for (final r in results) {
         if (r.device.platformName == targetDeviceName) {
           await FlutterBluePlus.stopScan();
-          _scanSubscription?.cancel();
+          await _scanSub?.cancel();
           await _connect(r.device);
           break;
         }
@@ -97,54 +188,139 @@ class BleService {
     try {
       await device.connect(timeout: const Duration(seconds: 10));
       _connectionController.add(true);
-    } catch (e) {
+    } catch (_) {
       _connectionController.add(false);
       _isConnecting = false;
       _retry();
       return;
     }
 
-    _connectionSubscription = device.connectionState.listen((state) {
+    _connSub = device.connectionState.listen((state) {
       if (state == BluetoothConnectionState.disconnected) {
         _connectionController.add(false);
+
+        // fail any pending wait
+        _finalTimeout?.cancel();
+        if (_pendingFinal != null && !_pendingFinal!.isCompleted) {
+          _pendingFinal!.completeError(
+            StateError("Disconnected while waiting for FINAL packet"),
+          );
+        }
+
         _cleanupConnection();
         _retry();
       }
     });
 
-    await _discoverServices();
+    await _discoverServicesAndChars();
     _isConnecting = false;
   }
 
-  Future<void> _discoverServices() async {
+  Future<void> _discoverServicesAndChars() async {
     if (_device == null) return;
-    List<BluetoothService> services = await _device!.discoverServices();
-    for (var service in services) {
-      if (service.uuid == serviceUuid) {
-        for (var characteristic in service.characteristics) {
-          if (characteristic.uuid == characteristicUuid) {
-            _characteristic = characteristic;
-            await _enableNotifications();
-            return;
-          }
+
+    final services = await _device!.discoverServices();
+
+    for (final s in services) {
+      if (s.uuid != serviceUuid) continue;
+
+      for (final c in s.characteristics) {
+        if (c.uuid == packetUuid) {
+          _pktChar = c;
+        } else if (c.uuid == controlUuid) {
+          _ctrlChar = c;
         }
       }
     }
+
+    if (_pktChar == null) {
+      throw StateError("Packet characteristic not found");
+    }
+    if (_ctrlChar == null) {
+      // Not fatal for live view, but fatal for on-demand startAssessment()
+      // Keep it nullable; startAssessment() will throw if missing.
+    }
+
+    await _enableNotifications();
+  }
+
+  Future<AssessmentResult> waitForFinal({
+    Duration timeout = const Duration(seconds: 25),
+  }) {
+    _finalTimeout?.cancel();
+    _pendingFinal?.completeError(StateError("Cancelled by new waitForFinal()"));
+    _pendingFinal = Completer<AssessmentResult>();
+
+    _finalTimeout = Timer(timeout, () {
+      if (_pendingFinal != null && !_pendingFinal!.isCompleted) {
+        _pendingFinal!.completeError(
+          TimeoutException("No FINAL packet received", timeout),
+        );
+      }
+    });
+
+    return _pendingFinal!.future;
   }
 
   Future<void> _enableNotifications() async {
-    if (_characteristic == null) return;
+    if (_pktChar == null) return;
 
-    await _characteristic!.setNotifyValue(true);
-    // Corrected: Use lastValueStream or onValueReceived
-    _notificationSubscription = _characteristic!.onValueReceived.listen((
-      value,
-    ) {
-      String raw = String.fromCharCodes(value);
-      final match = RegExp(r'\d+').firstMatch(raw);
-      if (match != null) {
-        double cap = double.parse(match.group(0)!);
-        _capacitanceController.add(cap);
+    await _pktChar!.setNotifyValue(true);
+
+    _notifySub?.cancel();
+    _notifySub = _pktChar!.onValueReceived.listen((value) {
+      // ESP32 packet is 7 bytes:
+      // seq(uint16), ide1(int16), ide2(int16), flags(uint8)
+      if (value.length < 7) return;
+
+      final bytes = Uint8List.fromList(value);
+      final bd = ByteData.sublistView(bytes);
+
+      final int seq = bd.getUint16(0, Endian.little);
+      final int ide1mpF = bd.getInt16(2, Endian.little);
+      final int ide2mpF = bd.getInt16(4, Endian.little);
+      final int flags = bytes[6];
+
+      final bool stableNow = (flags & FLAG_STABLE_NOW) != 0;
+      final bool ide1Valid = (flags & FLAG_IDE1_VALID) != 0;
+      final bool ide2Valid = (flags & FLAG_IDE2_VALID) != 0;
+      final bool isFinal = (flags & FLAG_FINAL) != 0;
+
+      // During idle, ESP32 should not notify; when measuring it may toggle stableNow.
+      _stableController.add(stableNow);
+
+      final double ide1Pf = ide1mpF / 1000.0;
+      final double ide2Pf = ide2mpF / 1000.0;
+
+      double? finalPf;
+      if (ide1Valid && ide2Valid) {
+        finalPf = (ide1Pf + ide2Pf) / 2.0;
+      } else if (ide1Valid) {
+        finalPf = ide1Pf;
+      } else if (ide2Valid) {
+        finalPf = ide2Pf;
+      }
+
+      // In your new on-demand design, ESP32 should only send FINAL once.
+      // Still safe to update live display when a packet arrives.
+      if (finalPf != null) {
+        _capacitanceController.add(finalPf);
+      }
+
+      // Resolve the waiting Start Assessment when FINAL bit arrives.
+      if (isFinal && _pendingFinal != null && !_pendingFinal!.isCompleted) {
+        _finalTimeout?.cancel();
+        _pendingFinal!.complete(
+          AssessmentResult(
+            seq: seq,
+            elapsedMs: 0,
+            ide1Pf: ide1Pf,
+            ide2Pf: ide2Pf,
+            finalPf: finalPf ?? double.nan,
+            stable: stableNow,
+            flags: flags,
+          ),
+        );
       }
     });
   }
@@ -156,23 +332,10 @@ class BleService {
   }
 
   void _cleanupConnection() {
-    _connectionSubscription?.cancel();
-    _notificationSubscription?.cancel();
-    _characteristic = null;
+    _connSub?.cancel();
+    _notifySub?.cancel();
+    _pktChar = null;
+    _ctrlChar = null;
     _device = null;
-  }
-
-  Future<void> disconnect() async {
-    await _device?.disconnect();
-    _connectionController.add(false);
-    _cleanupConnection();
-  }
-
-  void dispose() {
-    _scanSubscription?.cancel();
-    _connectionSubscription?.cancel();
-    _notificationSubscription?.cancel();
-    _capacitanceController.close();
-    _connectionController.close();
   }
 }
