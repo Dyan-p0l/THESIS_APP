@@ -38,7 +38,6 @@ class _HistoryPageState extends State<HistoryPage> {
 
     for (var reading in readings) {
       String dateKey = DateFormat('MMMM dd, yyyy').format(reading.timestamp);
-
       grouped.putIfAbsent(dateKey, () => []);
       grouped[dateKey]!.add(reading);
     }
@@ -49,17 +48,24 @@ class _HistoryPageState extends State<HistoryPage> {
   @override
   Widget build(BuildContext context) {
     final grouped = groupByDate(sortedReadings);
-    const Color darkTeal = Color(0xFF03313E); 
+    const Color darkTeal = Color(0xFF03313E);
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
 
     return Scaffold(
-      backgroundColor: Colors.white, 
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
-        leadingWidth: 70,
+        leadingWidth: screenWidth * 0.175,
         leading: Padding(
-          padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
+          padding: EdgeInsets.only(
+            left: screenWidth * 0.04,
+            top: screenHeight * 0.01,
+            bottom: screenHeight * 0.01,
+          ),
           child: GestureDetector(
             onTap: () {
               Navigator.pushNamed(context, '/homepage');
@@ -67,12 +73,12 @@ class _HistoryPageState extends State<HistoryPage> {
             child: Container(
               decoration: BoxDecoration(
                 color: darkTeal,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(screenWidth * 0.05),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.keyboard_double_arrow_left,
                 color: Colors.cyanAccent,
-                size: 28,
+                size: screenWidth * 0.07,
               ),
             ),
           ),
@@ -82,14 +88,14 @@ class _HistoryPageState extends State<HistoryPage> {
           style: TextStyle(
             color: darkTeal,
             fontWeight: FontWeight.w800,
-            fontSize: 26,
+            fontSize: screenWidth * 0.065,
           ),
         ),
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSortSelector(),
+          _buildSortSelector(screenWidth),
           Expanded(
             child: grouped.isEmpty
                 ? const Center(
@@ -99,29 +105,32 @@ class _HistoryPageState extends State<HistoryPage> {
                     ),
                   )
                 : ListView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: screenWidth * 0.04,
+                      vertical: screenHeight * 0.01,
                     ),
                     children: grouped.entries.map((entry) {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            padding: EdgeInsets.symmetric(
+                              vertical: screenHeight * 0.01,
+                            ),
                             child: Text(
                               entry.key,
-                              style: const TextStyle(
-                                color: Color(0xFF1E293B), // Dark text for date
-                                fontSize: 18,
+                              style: TextStyle(
+                                color: const Color(0xFF1E293B),
+                                fontSize: screenWidth * 0.045,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
                           ...entry.value
-                              .map((reading) => _buildReadingCard(reading))
+                              .map((reading) =>
+                                  _buildReadingCard(reading, screenWidth, screenHeight))
                               .toList(),
-                          const SizedBox(height: 12),
+                          SizedBox(height: screenHeight * 0.015),
                         ],
                       );
                     }).toList(),
@@ -132,26 +141,29 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  Widget _buildSortSelector() {
+  Widget _buildSortSelector(double screenWidth) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      padding: EdgeInsets.symmetric(
+        horizontal: screenWidth * 0.04,
+        vertical: screenWidth * 0.02,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             "Sort by:",
             style: TextStyle(
-              fontSize: 16,
+              fontSize: screenWidth * 0.04,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF03313E),
+              color: const Color(0xFF03313E),
             ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: screenWidth * 0.02),
           Row(
             children: SortType.values.map((type) {
               final isSelected = selectedSort == type;
               return Padding(
-                padding: const EdgeInsets.only(right: 12),
+                padding: EdgeInsets.only(right: screenWidth * 0.03),
                 child: ChoiceChip(
                   label: Text(type.name.toUpperCase()),
                   selected: isSelected,
@@ -159,16 +171,12 @@ class _HistoryPageState extends State<HistoryPage> {
                   labelStyle: TextStyle(
                     color: isSelected ? Colors.white : Colors.black87,
                     fontWeight: FontWeight.bold,
-                    fontSize: 12,
+                    fontSize: screenWidth * 0.03,
                   ),
-                  backgroundColor: const Color(
-                    0xFFD1D5DB,
-                  ), // Light grey for unselected
-                  selectedColor: const Color(
-                    0xFF03313E,
-                  ), // Dark teal for selected
+                  backgroundColor: const Color(0xFFD1D5DB),
+                  selectedColor: const Color(0xFF03313E),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(screenWidth * 0.05),
                     side: BorderSide.none,
                   ),
                   onSelected: (_) {
@@ -183,11 +191,10 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  Widget _buildReadingCard(Reading reading) {
+  Widget _buildReadingCard(Reading reading, double screenWidth, double screenHeight) {
     Color statusColor;
     IconData icon;
 
-    // Matching the icons and colors as closely as possible to the mockup
     switch (reading.category) {
       case FreshnessCategory.fresh:
         statusColor = Colors.tealAccent;
@@ -204,20 +211,21 @@ class _HistoryPageState extends State<HistoryPage> {
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      margin: EdgeInsets.only(bottom: screenHeight * 0.012),
+      padding: EdgeInsets.symmetric(
+        horizontal: screenWidth * 0.04,
+        vertical: screenHeight * 0.015,
+      ),
       decoration: BoxDecoration(
-        color: const Color(0xFF042F3C), // Deep navy/teal card background
-        borderRadius: BorderRadius.circular(10),
+        color: const Color(0xFF042F3C),
+        borderRadius: BorderRadius.circular(screenWidth * 0.025),
       ),
       child: IntrinsicHeight(
         child: Row(
           children: [
-            // 1. Icon Section
-            Icon(icon, color: statusColor, size: 38),
-            const SizedBox(width: 16),
+            Icon(icon, color: statusColor, size: screenWidth * 0.095),
+            SizedBox(width: screenWidth * 0.04),
 
-            // 2. Capacitance & Time Section
             Expanded(
               flex: 3,
               child: Column(
@@ -230,16 +238,16 @@ class _HistoryPageState extends State<HistoryPage> {
                     children: [
                       Text(
                         reading.capacitance.toStringAsFixed(0),
-                        style: const TextStyle(
-                          fontSize: 26,
+                        style: TextStyle(
+                          fontSize: screenWidth * 0.065,
                           fontWeight: FontWeight.w800,
                           color: Colors.white,
                         ),
                       ),
-                      const Text(
+                      Text(
                         "pF",
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: screenWidth * 0.045,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                         ),
@@ -247,12 +255,10 @@ class _HistoryPageState extends State<HistoryPage> {
                     ],
                   ),
                   Text(
-                    DateFormat(
-                      'hh:mma',
-                    ).format(reading.timestamp).toLowerCase(),
-                    style: const TextStyle(
+                    DateFormat('hh:mma').format(reading.timestamp).toLowerCase(),
+                    style: TextStyle(
                       color: Colors.cyanAccent,
-                      fontSize: 12,
+                      fontSize: screenWidth * 0.03,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -260,7 +266,6 @@ class _HistoryPageState extends State<HistoryPage> {
               ),
             ),
 
-            // 3. Sample Label & ID Section
             Expanded(
               flex: 4,
               child: Column(
@@ -269,51 +274,52 @@ class _HistoryPageState extends State<HistoryPage> {
                 children: [
                   Text(
                     reading.sampleLabel,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Colors.cyanAccent,
-                      fontSize: 16,
+                      fontSize: screenWidth * 0.04,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  SizedBox(height: screenHeight * 0.003),
                   Text(
                     reading.id,
-                    style: const TextStyle(color: Colors.white, fontSize: 11),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: screenWidth * 0.028,
+                    ),
                   ),
                 ],
               ),
             ),
 
-            // 4. Vertical Divider
             const VerticalDivider(
               color: Colors.white70,
               thickness: 1,
               width: 24,
             ),
 
-            // 5. Category Status Section
             Expanded(
               flex: 3,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text(
+                  Text(
                     "CATEGORY:",
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 10,
+                      fontSize: screenWidth * 0.025,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 0.5,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  SizedBox(height: screenHeight * 0.003),
                   Text(
                     reading.category.name.toUpperCase(),
                     style: TextStyle(
                       color: statusColor,
                       fontWeight: FontWeight.w800,
-                      fontSize: 13,
+                      fontSize: screenWidth * 0.033,
                     ),
                   ),
                 ],
