@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:thesis_app/connectivity/connectivity.dart';
-import 'staticpages/onboarding.dart';
-import 'connectivity/connectivity.dart';
-import 'analysis/analysis.dart';
-import 'history/history_page.dart';
-
+import 'package:thesis_app/pages/connectivity/connectivity.dart';
+import 'pages/staticpages/onboarding.dart';
+import 'pages/analysis/analysis.dart';
+import 'pages/history/history_page.dart';
 void main() {
   runApp(const MyApp());
 }
