@@ -494,6 +494,8 @@ class BleService {
     if (_disposed || _isConnecting || isConnected) return;
 
     _retryTimer?.cancel();
+    // Single retry timer prevents stacked reconnect attempts from scans, disconnects,
+    // and setup failures all firing at once.
     _statusController.add("Retrying BLE connection...");
     _retryTimer = Timer(_retryDelay, () {
       if (_disposed || _isConnecting || isConnected) return;
