@@ -1,34 +1,41 @@
 import 'package:flutter/material.dart';
+import '../../../db/dbhelper.dart';
+import '../../../models/samples.dart';
 
-void showExistingSampleDialog(BuildContext context) {
+void showExistingSampleDialog(
+  BuildContext context, {
+  required int readingId,
+  required double value,
+  required String carriedOutAt,
+}) {
   final screenWidth = MediaQuery.of(context).size.width;
   final screenHeight = MediaQuery.of(context).size.height;
-
-  final List<String> existingSamples = [
-    "Sample_00",
-    "Sample_01",
-    "Sample_02",
-    "Sample_03",
-    "Sample_04",
-    "Sample_05",
-    "Sample_06",
-    "Sample_07",
-    "Sample_08",
-    "Sample_09",
-    "Sample_10",
-  ];
-
-  const int scrollbarThreshold = 5;
-  final bool showScrollbar = existingSamples.length > scrollbarThreshold;
-
-  String? selectedSample = existingSamples.first;
   final ScrollController scrollController = ScrollController();
+  
+  List<Sample> samples = [];
+  Sample? selectedSample;
+  bool isLoading = true;
 
   showDialog(
     context: context,
     builder: (context) {
       return StatefulBuilder(
         builder: (context, setState) {
+
+          // load samples from DB once
+          Future<void> loadSamples() async {
+            final result = await DBhelper.instance.fetchAllSamples();
+            setState(() {
+              samples = result;
+              selectedSample = result.isNotEmpty ? result.first : null;
+              isLoading = false;
+            });
+          }
+
+          if (isLoading) loadSamples();
+
+          final bool showScrollbar = samples.length > 5;
+
           return Dialog(
             backgroundColor: Colors.white,
             shape: RoundedRectangleBorder(
@@ -56,73 +63,100 @@ void showExistingSampleDialog(BuildContext context) {
 
                   SizedBox(height: screenHeight * 0.02),
 
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: screenHeight * 0.4,
-                    ),
-                    child: Scrollbar(
-                      controller: scrollController,
-                      thumbVisibility: showScrollbar,
-                      child: ListView.separated(
-                        controller: scrollController,
-                        shrinkWrap: true,
-                        padding: EdgeInsets.only(right: screenWidth * 0.04),
-                        itemCount: existingSamples.length,
-                        separatorBuilder: (_, __) =>
-                            SizedBox(height: screenHeight * 0.012),
-                        itemBuilder: (context, index) {
-                          final sample = existingSamples[index];
-                          final isSelected = selectedSample == sample;
+                  // show loading, empty state, or list
+                  isLoading
+                    ? const CircularProgressIndicator()
+                    : samples.isEmpty
+                      ? Text(
+                          "No samples found.\nSave as a new sample first.",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: screenWidth * 0.038,
+                            color: Colors.grey,
+                          ),
+                        )
+                      : ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: screenHeight * 0.4,
+                          ),
+                          child: Scrollbar(
+                            controller: scrollController,
+                            thumbVisibility: showScrollbar,
+                            child: ListView.separated(
+                              controller: scrollController,
+                              shrinkWrap: true,
+                              padding: EdgeInsets.only(right: screenWidth * 0.04),
+                              itemCount: samples.length,
+                              separatorBuilder: (_, __) =>
+                                  SizedBox(height: screenHeight * 0.012),
+                              itemBuilder: (context, index) {
+                                final sample = samples[index];
+                                final isSelected = selectedSample?.id == sample.id;
 
-                          return GestureDetector(
-                            onTap: () {
-                              setState(() => selectedSample = sample);
-                            },
-                            child: Container(
-                              width: double.infinity,
-                              padding: EdgeInsets.symmetric(
-                                vertical: screenHeight * 0.02,
-                                horizontal: screenWidth * 0.04,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEEEEEE),
-                                borderRadius:
-                                    BorderRadius.circular(screenWidth * 0.03),
-                                border: isSelected
-                                    ? Border.all(
-                                        color: const Color(0xFF40E0D0),
-                                        width: 2,
-                                      )
-                                    : null,
-                              ),
-                              child: Text(
-                                sample,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: screenWidth * 0.04,
-                                  color: const Color(0xFF012532),
-                                ),
-                              ),
+                                return GestureDetector(
+                                  onTap: () {
+                                    setState(() => selectedSample = sample);
+                                  },
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: EdgeInsets.symmetric(
+                                      vertical: screenHeight * 0.02,
+                                      horizontal: screenWidth * 0.04,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFEEEEEE),
+                                      borderRadius: BorderRadius.circular(screenWidth * 0.03),
+                                      border: isSelected
+                                          ? Border.all(
+                                              color: const Color(0xFF40E0D0),
+                                              width: 2,
+                                            )
+                                          : null,
+                                    ),
+                                    child: Text(
+                                      sample.label,   // ← from DB not hardcoded
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: screenWidth * 0.04,
+                                        color: const Color(0xFF012532),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
+                          ),
+                        ),
 
                   SizedBox(height: screenHeight * 0.025),
 
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
+                      // disable button if no sample selected or still loading
+                      onPressed: (isLoading || selectedSample == null)
+                        ? null
+                        : () async {
+                            // update existing reading — link to selected sample
+                            await DBhelper.instance.saveReadingToSample(
+                              readingId,
+                              selectedSample!.id!,
+                            );
+
+                            Navigator.pop(context); // close existing sample dialog
+                            Navigator.pop(context); // close save dialog
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Saved to ${selectedSample!.label}')),
+                            );
+                          },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF012532),
                         foregroundColor: const Color(0xFF40E0D0),
+                        disabledBackgroundColor: Colors.grey.shade300,
                         padding: EdgeInsets.symmetric(vertical: screenHeight * 0.02),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(screenWidth * 0.03),

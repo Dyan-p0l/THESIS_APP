@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/ble_service.dart';
 import 'save_reading/savedialog.dart';
+import '../../db/dbhelper.dart';
+import '../../models/readings.dart';
 
 class AnalysisScreen extends StatefulWidget {
   const AnalysisScreen({super.key});
@@ -23,6 +25,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   bool _sessionValid = false;
   String _statusText = "Preparing assessment...";
   int _stableSampleCount = 0;
+  int? _currentReadingId;
 
   @override
   void initState() {
@@ -67,7 +70,9 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       _waiting = true;
       _sessionValid = false;
       _stableSampleCount = 0;
+      _currentReadingId = null;
       _statusText = "Ready. Press the device button to start measuring.";
+
     });
 
     try {
@@ -85,6 +90,18 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             ? "Assessment complete"
             : "Assessment invalid / timeout";
       });
+
+
+      if (result.sessionValid && result.finalPf != null) {
+        _currentReadingId = await DBhelper.instance.insertReading(
+          Reading(
+            value: result.finalPf!,
+            carriedOutAt: DateTime.now().toIso8601String(),
+            isSaved: false,
+          ),
+        );
+      }
+
     } on TimeoutException {
       if (!mounted) return;
       setState(() {
@@ -265,7 +282,19 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                           height: screenHeight * 0.08,
                           child: TextButton(
                             onPressed: () {
-                              showSaveDialog(context);
+                              if (!_sessionValid || _capacitancePf == null || _currentReadingId == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('No valid reading to save')),
+                                );
+                                return;
+                              }
+
+                              showSaveDialog(
+                                context,
+                                readingId: _currentReadingId!,
+                                value: _capacitancePf!,
+                                carriedOutAt: DateTime.now().toIso8601String(),
+                              );
                             },
                             style: TextButton.styleFrom(
                               foregroundColor: const Color(0XFF40E0D0),

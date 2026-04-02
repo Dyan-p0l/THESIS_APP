@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'models/reading.dart';
-import 'data/mock_readings.dart';
+import '../../db/dbhelper.dart';
+import '../../models/readings.dart';
 
 enum SortType { date, sample, category }
 
@@ -14,30 +14,58 @@ class HistoryPage extends StatefulWidget {
 
 class _HistoryPageState extends State<HistoryPage> {
   SortType selectedSort = SortType.date;
+  List<Reading> readings = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    loadReadings();
+  }
+
+  // fetch all readings from DB
+  Future<void> loadReadings() async {
+    final result = await DBhelper.instance.fetchAllReadings();
+    setState(() {
+      readings = result;
+      isLoading = false;
+    });
+  }
 
   List<Reading> get sortedReadings {
-    List<Reading> list = [...mockReadings];
+    List<Reading> list = [...readings];
 
     switch (selectedSort) {
       case SortType.date:
-        list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        list.sort((a, b) => b.carriedOutAt.compareTo(a.carriedOutAt));
         break;
       case SortType.sample:
-        list.sort((a, b) => a.sampleLabel.compareTo(b.sampleLabel));
+        // null sampleIds go to the end
+        list.sort((a, b) {
+          if (a.sampleId == null) return 1;
+          if (b.sampleId == null) return -1;
+          return a.sampleId!.compareTo(b.sampleId!);
+        });
         break;
       case SortType.category:
-        list.sort((a, b) => a.category.index.compareTo(b.category.index));
+        list.sort((a, b) {
+          final catA = a.category ?? 'zzz'; // null categories go to end
+          final catB = b.category ?? 'zzz';
+          return catA.compareTo(catB);
+        });
         break;
     }
 
     return list;
   }
 
+  // group readings by date
   Map<String, List<Reading>> groupByDate(List<Reading> readings) {
     Map<String, List<Reading>> grouped = {};
 
     for (var reading in readings) {
-      String dateKey = DateFormat('MMMM dd, yyyy').format(reading.timestamp);
+      final dateTime = DateTime.parse(reading.carriedOutAt);
+      final dateKey = DateFormat('MMMM dd, yyyy').format(dateTime);
       grouped.putIfAbsent(dateKey, () => []);
       grouped[dateKey]!.add(reading);
     }
@@ -92,52 +120,56 @@ class _HistoryPageState extends State<HistoryPage> {
           ),
         ),
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSortSelector(screenWidth),
-          Expanded(
-            child: grouped.isEmpty
-                ? const Center(
-                    child: Text(
-                      "No readings yet.",
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  )
-                : ListView(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: screenWidth * 0.04,
-                      vertical: screenHeight * 0.01,
-                    ),
-                    children: grouped.entries.map((entry) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: EdgeInsets.symmetric(
-                              vertical: screenHeight * 0.01,
-                            ),
-                            child: Text(
-                              entry.key,
-                              style: TextStyle(
-                                color: const Color(0xFF1E293B),
-                                fontSize: screenWidth * 0.045,
-                                fontWeight: FontWeight.w600,
+      body: isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildSortSelector(screenWidth),
+              Expanded(
+                child: grouped.isEmpty
+                  ? const Center(
+                      child: Text(
+                        "No readings yet.",
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: loadReadings, // pull to refresh
+                      child: ListView(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: screenWidth * 0.04,
+                          vertical: screenHeight * 0.01,
+                        ),
+                        children: grouped.entries.map((entry) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: EdgeInsets.symmetric(
+                                  vertical: screenHeight * 0.01,
+                                ),
+                                child: Text(
+                                  entry.key,
+                                  style: TextStyle(
+                                    color: const Color(0xFF1E293B),
+                                    fontSize: screenWidth * 0.045,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                          ...entry.value
-                              .map((reading) =>
-                                  _buildReadingCard(reading, screenWidth, screenHeight))
-                              .toList(),
-                          SizedBox(height: screenHeight * 0.015),
-                        ],
-                      );
-                    }).toList(),
-                  ),
+                              ...entry.value.map((reading) =>
+                                _buildReadingCard(reading, screenWidth, screenHeight)
+                              ).toList(),
+                              SizedBox(height: screenHeight * 0.015),
+                            ],
+                          );
+                        }).toList(),
+                      ),
+                    ),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -192,23 +224,34 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   Widget _buildReadingCard(Reading reading, double screenWidth, double screenHeight) {
+
+    // determine color and icon based on category string
     Color statusColor;
     IconData icon;
 
     switch (reading.category) {
-      case FreshnessCategory.fresh:
+      case 'fresh':
         statusColor = Colors.tealAccent;
         icon = Icons.health_and_safety;
         break;
-      case FreshnessCategory.moderate:
+      case 'moderate':
         statusColor = Colors.orangeAccent;
         icon = Icons.health_and_safety;
         break;
-      case FreshnessCategory.spoiled:
+      case 'spoiled':
         statusColor = Colors.redAccent;
         icon = Icons.report_problem_outlined;
         break;
+      default:
+        // category is null — not yet categorized
+        statusColor = Colors.grey;
+        icon = Icons.help_outline;
+        break;
     }
+
+    // parse carriedOutAt for time display
+    final dateTime = DateTime.parse(reading.carriedOutAt);
+    final timeDisplay = DateFormat('hh:mma').format(dateTime).toLowerCase();
 
     return Container(
       margin: EdgeInsets.only(bottom: screenHeight * 0.012),
@@ -237,7 +280,7 @@ class _HistoryPageState extends State<HistoryPage> {
                     textBaseline: TextBaseline.alphabetic,
                     children: [
                       Text(
-                        reading.capacitance.toStringAsFixed(0),
+                        reading.value.toStringAsFixed(0),  // ← value from DB
                         style: TextStyle(
                           fontSize: screenWidth * 0.065,
                           fontWeight: FontWeight.w800,
@@ -255,7 +298,7 @@ class _HistoryPageState extends State<HistoryPage> {
                     ],
                   ),
                   Text(
-                    DateFormat('hh:mma').format(reading.timestamp).toLowerCase(),
+                    timeDisplay,                           // ← time from carriedOutAt
                     style: TextStyle(
                       color: Colors.cyanAccent,
                       fontSize: screenWidth * 0.03,
@@ -273,7 +316,9 @@ class _HistoryPageState extends State<HistoryPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    reading.sampleLabel,
+                    reading.sampleId != null
+                      ? 'Sample #${reading.sampleId}'  // ← show sample id for now
+                      : 'No sample',
                     style: TextStyle(
                       color: Colors.cyanAccent,
                       fontSize: screenWidth * 0.04,
@@ -282,7 +327,7 @@ class _HistoryPageState extends State<HistoryPage> {
                   ),
                   SizedBox(height: screenHeight * 0.003),
                   Text(
-                    reading.id,
+                    'ID: ${reading.id ?? '-'}',          // ← reading id from DB
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: screenWidth * 0.028,
@@ -315,7 +360,7 @@ class _HistoryPageState extends State<HistoryPage> {
                   ),
                   SizedBox(height: screenHeight * 0.003),
                   Text(
-                    reading.category.name.toUpperCase(),
+                    reading.category?.toUpperCase() ?? 'N/A',  // ← nullable category
                     style: TextStyle(
                       color: statusColor,
                       fontWeight: FontWeight.w800,

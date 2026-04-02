@@ -1,9 +1,21 @@
 import 'package:flutter/material.dart';
+import '../../../db/dbhelper.dart';
+import '../../../models/samples.dart';
+import '../../../models/readings.dart';
 import 'showexistingsamples.dart';
 
-void showSaveDialog(BuildContext context) {
+void showSaveDialog(
+  BuildContext context, 
+  {
+    required int readingId,
+    required double value,
+    required String carriedOutAt,
+  })
+ {
+
   final screenWidth = MediaQuery.of(context).size.width;
   final screenHeight = MediaQuery.of(context).size.height;
+
   final TextEditingController labelController = TextEditingController();
 
   showDialog(
@@ -43,7 +55,9 @@ void showSaveDialog(BuildContext context) {
                         color: const Color(0xFF012532),
                       ),
                     ),
+
                     SizedBox(height: screenHeight * 0.02),
+
                     TextField(
                       controller: labelController,
                       decoration: InputDecoration(
@@ -69,9 +83,31 @@ void showSaveDialog(BuildContext context) {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () {
+                        onPressed: () async {
+                          final label = labelController.text.trim();
+
+                          if (label.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text("Please enter a label for the sample.")),
+                            );
+                            return;
+                          }
+
+                          final sampleId = await DBhelper.instance.insertSample(
+                            Sample(
+                              label: label,
+                              createdAt: DateTime.now().toIso8601String(),
+                            ),
+                          );
+
+                          await DBhelper.instance.saveReadingToSample(readingId, sampleId);
+
                           Navigator.pop(context);
-                        },
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Saved to new sample: $label')),
+                          );
+                        },  
+
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF012532),
                           foregroundColor: const Color(0xFF40E0D0),
@@ -80,6 +116,7 @@ void showSaveDialog(BuildContext context) {
                             borderRadius: BorderRadius.circular(screenWidth * 0.03),
                           ),
                         ),
+
                         child: Text(
                           "SAVE",
                           style: TextStyle(
@@ -113,7 +150,12 @@ void showSaveDialog(BuildContext context) {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    showExistingSampleDialog(context);
+                    showExistingSampleDialog(
+                      context,
+                      readingId: readingId,    // ← ADD THIS
+                      value: value,
+                      carriedOutAt: carriedOutAt,
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF40E0D0),
