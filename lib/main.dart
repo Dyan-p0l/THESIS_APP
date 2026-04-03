@@ -6,13 +6,49 @@ import 'package:thesis_app/pages/history/history_page.dart';
 import 'package:thesis_app/pages/savedsamplereading/saved_samples.dart';
 import 'package:thesis_app/pages/savedsamplereading/sample_readings.dart';
 import 'package:thesis_app/pages/savedsamplereading/viewgraph.dart';
+import 'package:thesis_app/services/ble_service.dart';
 
 void main() {
+  // Ensure Flutter bindings are ready before any app-level BLE work starts.
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  // Keep BLE reconnect logic at app level, not only inside one screen.
+  // This is why MyApp was changed from StatelessWidget to StatefulWidget.
+  final BleService _bleService = BleService();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Try BLE auto-connect once when the app starts.
+    _bleService.startAutoConnect();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // When the app is reopened/resumed, trigger BLE reconnection again.
+    // This fixes the old behavior where reconnect only happened after
+    // ConnectivityScreen was rebuilt.
+    if (state == AppLifecycleState.resumed) {
+      _bleService.startAutoConnect();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,16 +66,20 @@ class MyApp extends StatelessWidget {
         '/history': (context) => const HistoryPage(),
         '/saved_samples': (context) => const SavedSamplesScreen(),
         '/sample_readings': (context) {
-          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+          final args =
+              ModalRoute.of(context)!.settings.arguments
+                  as Map<String, dynamic>;
           return SampleReadingsScreen(
-            sampleId:    args['sampleId']    as int,
+            sampleId: args['sampleId'] as int,
             sampleLabel: args['sampleLabel'] as String,
           );
         },
         '/sample_graph': (context) {
-          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+          final args =
+              ModalRoute.of(context)!.settings.arguments
+                  as Map<String, dynamic>;
           return ViewGraphScreen(
-            sampleId:    args['sampleId']    as int,
+            sampleId: args['sampleId'] as int,
             sampleLabel: args['sampleLabel'] as String,
           );
         },

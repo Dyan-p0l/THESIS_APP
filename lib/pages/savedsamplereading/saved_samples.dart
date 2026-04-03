@@ -76,6 +76,7 @@ class _SavedSamplesScreenState extends State<SavedSamplesScreen> {
       'hour_of_day',
       'elapsed_minutes_since_first_reading',
       'label',
+      'category',
     ]);
 
     for (final sample in _samples) {
@@ -99,6 +100,7 @@ class _SavedSamplesScreenState extends State<SavedSamplesScreen> {
           dt.hour,
           dt.difference(firstReadingTime).inMinutes,
           '',
+          reading.category,
         ]);
       }
     }
@@ -330,67 +332,6 @@ class _SavedSamplesScreenState extends State<SavedSamplesScreen> {
                 child: ElevatedButton(
                   onPressed: _samples.isEmpty ? null : () {
                     _generateCsv(context);
-                    showDialog(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        backgroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            screenWidth * 0.04,
-                          ),
-                        ),
-                        content: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              "CSV file successfully generated.",
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontFamily: "Inter",
-                                fontSize: screenWidth * 0.038,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black87,
-                              ),
-                            ),
-                            SizedBox(height: screenHeight * 0.008),
-                            Text(
-                              "/storage/emulated/0/Download/",
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontFamily: "Inter",
-                                fontSize: screenWidth * 0.032,
-                                color: Colors.black54,
-                              ),
-                            ),
-                            SizedBox(height: screenHeight * 0.018),
-                            ElevatedButton(
-                              onPressed: () => Navigator.pop(context),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: accent,
-                                foregroundColor: const Color(0xFF021E28),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(
-                                    screenWidth * 0.05,
-                                  ),
-                                ),
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: screenWidth * 0.08,
-                                  vertical: screenHeight * 0.012,
-                                ),
-                              ),
-                              child: Text(
-                                "OK",
-                                style: TextStyle(
-                                  fontFamily: "Inter",
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: screenWidth * 0.038,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: accent,
