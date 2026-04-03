@@ -4,6 +4,7 @@ import '../../services/ble_service.dart';
 import 'save_reading/savedialog.dart';
 import '../../db/dbhelper.dart';
 import '../../models/readings.dart';
+import 'dart:math';
 
 class AnalysisScreen extends StatefulWidget {
   const AnalysisScreen({super.key});
@@ -18,6 +19,12 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   StreamSubscription<double>? _capSub;
   StreamSubscription<bool>? _stableSub;
   StreamSubscription<String>? _statusSub;
+
+  String _randomCategory() {
+    final categories = ['fresh', 'moderate', 'spoiled'];
+    final random = Random();
+    return categories[random.nextInt(categories.length)];
+  }
 
   double? _capacitancePf;
   bool _stableNow = false;
@@ -98,6 +105,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             value: result.finalPf!,
             carriedOutAt: DateTime.now().toIso8601String(),
             isSaved: false,
+            category: _randomCategory(),
           ),
         );
       }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../db/dbhelper.dart';
 import '../../models/readings.dart';
+import '../../models/samples.dart';
 
 enum SortType { date, sample, category }
 
@@ -15,19 +16,29 @@ class HistoryPage extends StatefulWidget {
 class _HistoryPageState extends State<HistoryPage> {
   SortType selectedSort = SortType.date;
   List<Reading> readings = [];
+  Map<int, String> sampleLabels = {}; // ← id → label lookup map
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    loadReadings();
+    loadData();
   }
 
-  // fetch all readings from DB
-  Future<void> loadReadings() async {
-    final result = await DBhelper.instance.fetchAllReadings();
+  // fetch readings AND samples together
+  Future<void> loadData() async {
+    final fetchedReadings = await DBhelper.instance.fetchAllReadings();
+    final fetchedSamples = await DBhelper.instance.fetchAllSamples();
+
+    // build a map: { sampleId: sampleLabel }
+    // so you can do sampleLabels[reading.sampleId] to get the label
+    final Map<int, String> labelsMap = {
+      for (var s in fetchedSamples) s.id!: s.label
+    };
+
     setState(() {
-      readings = result;
+      readings = fetchedReadings;
+      sampleLabels = labelsMap;
       isLoading = false;
     });
   }
@@ -40,16 +51,15 @@ class _HistoryPageState extends State<HistoryPage> {
         list.sort((a, b) => b.carriedOutAt.compareTo(a.carriedOutAt));
         break;
       case SortType.sample:
-        // null sampleIds go to the end
         list.sort((a, b) {
-          if (a.sampleId == null) return 1;
-          if (b.sampleId == null) return -1;
-          return a.sampleId!.compareTo(b.sampleId!);
+          final labelA = a.sampleId != null ? (sampleLabels[a.sampleId] ?? 'zzz') : 'zzz';
+          final labelB = b.sampleId != null ? (sampleLabels[b.sampleId] ?? 'zzz') : 'zzz';
+          return labelA.compareTo(labelB);
         });
         break;
       case SortType.category:
         list.sort((a, b) {
-          final catA = a.category ?? 'zzz'; // null categories go to end
+          final catA = a.category ?? 'zzz';
           final catB = b.category ?? 'zzz';
           return catA.compareTo(catB);
         });
@@ -59,17 +69,14 @@ class _HistoryPageState extends State<HistoryPage> {
     return list;
   }
 
-  // group readings by date
   Map<String, List<Reading>> groupByDate(List<Reading> readings) {
     Map<String, List<Reading>> grouped = {};
-
     for (var reading in readings) {
       final dateTime = DateTime.parse(reading.carriedOutAt);
       final dateKey = DateFormat('MMMM dd, yyyy').format(dateTime);
       grouped.putIfAbsent(dateKey, () => []);
       grouped[dateKey]!.add(reading);
     }
-
     return grouped;
   }
 
@@ -77,7 +84,6 @@ class _HistoryPageState extends State<HistoryPage> {
   Widget build(BuildContext context) {
     final grouped = groupByDate(sortedReadings);
     const Color darkTeal = Color(0xFF03313E);
-
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
 
@@ -87,26 +93,23 @@ class _HistoryPageState extends State<HistoryPage> {
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
-        leadingWidth: screenWidth * 0.175,
+        leadingWidth: screenWidth * 0.155,
         leading: Padding(
-          padding: EdgeInsets.only(
-            left: screenWidth * 0.04,
-            top: screenHeight * 0.01,
-            bottom: screenHeight * 0.01,
+          padding: EdgeInsets.symmetric(
+            horizontal: screenWidth * 0.03,
+            vertical: screenHeight * 0.012,
           ),
           child: GestureDetector(
-            onTap: () {
-              Navigator.pushNamed(context, '/homepage');
-            },
+            onTap: () => Navigator.pushNamed(context, '/homepage'),
             child: Container(
               decoration: BoxDecoration(
                 color: darkTeal,
-                borderRadius: BorderRadius.circular(screenWidth * 0.05),
+                borderRadius: BorderRadius.circular(screenWidth * 0.02),
               ),
               child: Icon(
                 Icons.keyboard_double_arrow_left,
                 color: Colors.cyanAccent,
-                size: screenWidth * 0.07,
+                size: screenWidth * 0.05,
               ),
             ),
           ),
@@ -135,7 +138,7 @@ class _HistoryPageState extends State<HistoryPage> {
                       ),
                     )
                   : RefreshIndicator(
-                      onRefresh: loadReadings, // pull to refresh
+                      onRefresh: loadData,
                       child: ListView(
                         padding: EdgeInsets.symmetric(
                           horizontal: screenWidth * 0.04,
@@ -224,8 +227,6 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   Widget _buildReadingCard(Reading reading, double screenWidth, double screenHeight) {
-
-    // determine color and icon based on category string
     Color statusColor;
     IconData icon;
 
@@ -243,15 +244,18 @@ class _HistoryPageState extends State<HistoryPage> {
         icon = Icons.report_problem_outlined;
         break;
       default:
-        // category is null — not yet categorized
         statusColor = Colors.grey;
         icon = Icons.help_outline;
         break;
     }
 
-    // parse carriedOutAt for time display
     final dateTime = DateTime.parse(reading.carriedOutAt);
     final timeDisplay = DateFormat('hh:mma').format(dateTime).toLowerCase();
+
+    // ← look up the label using sampleId
+    final sampleLabel = reading.sampleId != null
+        ? (sampleLabels[reading.sampleId] ?? 'Unknown Sample')
+        : 'No sample';
 
     return Container(
       margin: EdgeInsets.only(bottom: screenHeight * 0.012),
@@ -280,9 +284,9 @@ class _HistoryPageState extends State<HistoryPage> {
                     textBaseline: TextBaseline.alphabetic,
                     children: [
                       Text(
-                        reading.value.toStringAsFixed(0),  // ← value from DB
+                        reading.value.toStringAsFixed(2),
                         style: TextStyle(
-                          fontSize: screenWidth * 0.065,
+                          fontSize: screenWidth * 0.05,
                           fontWeight: FontWeight.w800,
                           color: Colors.white,
                         ),
@@ -290,7 +294,7 @@ class _HistoryPageState extends State<HistoryPage> {
                       Text(
                         "pF",
                         style: TextStyle(
-                          fontSize: screenWidth * 0.045,
+                          fontSize: screenWidth * 0.035,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                         ),
@@ -298,7 +302,7 @@ class _HistoryPageState extends State<HistoryPage> {
                     ],
                   ),
                   Text(
-                    timeDisplay,                           // ← time from carriedOutAt
+                    timeDisplay,
                     style: TextStyle(
                       color: Colors.cyanAccent,
                       fontSize: screenWidth * 0.03,
@@ -316,18 +320,16 @@ class _HistoryPageState extends State<HistoryPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    reading.sampleId != null
-                      ? 'Sample #${reading.sampleId}'  // ← show sample id for now
-                      : 'No sample',
+                    sampleLabel, // ← actual label name now
                     style: TextStyle(
                       color: Colors.cyanAccent,
-                      fontSize: screenWidth * 0.04,
+                      fontSize: screenWidth * 0.033,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   SizedBox(height: screenHeight * 0.003),
                   Text(
-                    'ID: ${reading.id ?? '-'}',          // ← reading id from DB
+                    'ID: ${reading.id ?? '-'}',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: screenWidth * 0.028,
@@ -360,7 +362,7 @@ class _HistoryPageState extends State<HistoryPage> {
                   ),
                   SizedBox(height: screenHeight * 0.003),
                   Text(
-                    reading.category?.toUpperCase() ?? 'N/A',  // ← nullable category
+                    reading.category?.toUpperCase() ?? 'N/A',
                     style: TextStyle(
                       color: statusColor,
                       fontWeight: FontWeight.w800,

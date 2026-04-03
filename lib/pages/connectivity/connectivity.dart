@@ -84,6 +84,7 @@ class _ConnectivityScreenState extends State<ConnectivityScreen> {
                           color: textCyan,
                         ),
                       ),
+
                       SizedBox(height: screenHeight * 0.035),
 
                       _ConnectionRow(connected: connected, accent: accent),
@@ -112,9 +113,13 @@ class _ConnectivityScreenState extends State<ConnectivityScreen> {
                             foregroundColor: const Color(0XFF012532),
                             disabledBackgroundColor: Colors.grey.shade700,
                             disabledForegroundColor: Colors.white70,
-                            padding: EdgeInsets.symmetric(vertical: screenHeight * 0.02),
+                            padding: EdgeInsets.symmetric(
+                              vertical: screenHeight * 0.02,
+                            ),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(screenWidth * 0.04),
+                              borderRadius: BorderRadius.circular(
+                                screenWidth * 0.04,
+                              ),
                             ),
                           ),
                           child: Text(
@@ -130,23 +135,55 @@ class _ConnectivityScreenState extends State<ConnectivityScreen> {
                         ),
                       ),
 
-                      SizedBox(height: screenHeight * 0.022),
+                      SizedBox(height: screenHeight * 0.018),
 
-                      TextButton.icon(
-                        onPressed: () {
-                          Navigator.pushNamed(context, '/history');
-                        },
-                        icon: Icon(Icons.history, color: Colors.white, size: screenWidth * 0.055),
-                        label: Text(
-                          "VIEW HISTORY",
-                          style: TextStyle(
-                            fontFamily: "Inter",
-                            fontSize: screenWidth * 0.036,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: 0.5,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          TextButton.icon(
+                            onPressed: () {
+                              Navigator.pushNamed(context, '/history');
+                            },
+                            icon: Icon(
+                              Icons.history,
+                              color: Colors.white,
+                              size: screenWidth * 0.055,
+                            ),
+                            label: Text(
+                              "VIEW HISTORY",
+                              style: TextStyle(
+                                fontFamily: "Inter",
+                                fontSize: screenWidth * 0.036,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
                           ),
-                        ),
+
+                          SizedBox(width: screenWidth * 0.003),
+
+                          TextButton.icon(
+                            onPressed: () {
+                              Navigator.pushNamed(context, '/saved_samples');
+                            },
+                            icon: Icon(
+                              Icons.folder_open_rounded,
+                              color: Colors.white,
+                              size: screenWidth * 0.055,
+                            ),
+                            label: Text(
+                              "VIEW SAMPLES",
+                              style: TextStyle(
+                                fontFamily: "Inter",
+                                fontSize: screenWidth * 0.036,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
 
                       SizedBox(height: screenHeight * 0.012),

@@ -31,6 +31,7 @@ class BleService {
   factory BleService() => _instance;
 
   BleService._internal() {
+    // If Bluetooth itself turns back on, try to reconnect automatically.
     FlutterBluePlus.adapterState.listen((state) {
       if (state == BluetoothAdapterState.on && !_isConnecting && !isConnected) {
         startAutoConnect();
@@ -82,7 +83,8 @@ class BleService {
   Stream<bool> get stableStream => _stableController.stream;
   Stream<String> get statusStream => _statusController.stream;
 
-  bool get isConnected => _device != null && _packetChar != null;
+  bool _connected = false;
+  bool get isConnected => _connected;
 
   bool _isConnecting = false;
   bool _isArmed = false;
@@ -97,10 +99,18 @@ class BleService {
   double? _liveEma;
 
   Future<void> startAutoConnect() async {
-    if (_disposed ||
-        _isConnecting ||
-        FlutterBluePlus.isScanningNow ||
-        isConnected) {
+    // Guard against duplicate scans / overlapping connect attempts.
+    if (_disposed || _isConnecting || FlutterBluePlus.isScanningNow) {
+      return;
+    }
+
+    // Clear stale BLE references left behind by app exit, failed connect,
+    // or OS-level disconnects before starting a fresh reconnect attempt.
+    if (_device != null && !_connected) {
+      _cleanupConnection();
+    }
+
+    if (isConnected) {
       return;
     }
 
@@ -159,11 +169,7 @@ class BleService {
 
   void dispose() {
     _disposed = true;
-    _scanSub?.cancel();
-    _connSub?.cancel();
-    _notifySub?.cancel();
-    _isScanningSub?.cancel();
-    _rssiTimer?.cancel();
+    _cleanupConnection();
     _sessionInactivityTimer?.cancel();
     _retryTimer?.cancel();
     _connectionController.close();
@@ -240,6 +246,8 @@ class BleService {
     if (_disposed || _isConnecting) return;
     _retryTimer?.cancel();
     _isConnecting = true;
+    _connected = false;
+    // Store the current target device only for this connection attempt.
     _device = device;
 
     try {
@@ -249,6 +257,12 @@ class BleService {
 
       _connSub?.cancel();
       _connSub = device.connectionState.listen((state) {
+        // Track the true BLE link state from the plugin instead of inferring it
+        // from cached object references.
+        final connectedNow = state == BluetoothConnectionState.connected;
+        _connected = connectedNow;
+        _connectionController.add(connectedNow);
+
         if (state == BluetoothConnectionState.disconnected) {
           _cancelPendingAssessment("Disconnected while waiting for result");
           _cleanupConnection();
@@ -263,9 +277,11 @@ class BleService {
       await _readAndEmitRssi();
       _startRssiPolling();
 
+      _connected = true;
       _connectionController.add(true);
       _statusController.add("Connected");
     } catch (e) {
+      _connected = false;
       _connectionController.add(false);
       _statusController.add("Connection failed");
       await _hardCleanupAfterConnectFailure();
@@ -472,6 +488,7 @@ class BleService {
     _connSub = null;
     _rssiTimer?.cancel();
     _packetChar = null;
+    _connected = false;
 
     try {
       await _device?.disconnect();
@@ -481,21 +498,30 @@ class BleService {
   }
 
   void _cleanupConnection() {
+    // Fully clear subscriptions and cached handles so the next reconnect starts
+    // from a known clean state.
     _scanSub?.cancel();
+    _scanSub = null;
     _connSub?.cancel();
+    _connSub = null;
     _notifySub?.cancel();
+    _notifySub = null;
+    _isScanningSub?.cancel();
+    _isScanningSub = null;
     _rssiTimer?.cancel();
+    _rssiTimer = null;
     _packetChar = null;
     _device = null;
+    _connected = false;
     _isConnecting = false;
   }
 
   void _scheduleRetry(String reason) {
     if (_disposed || _isConnecting || isConnected) return;
 
+    // Use a single retry timer so scan-stop, disconnect, and connect-failure
+    // events do not stack multiple reconnect attempts on top of each other.
     _retryTimer?.cancel();
-    // Single retry timer prevents stacked reconnect attempts from scans, disconnects,
-    // and setup failures all firing at once.
     _statusController.add("Retrying BLE connection...");
     _retryTimer = Timer(_retryDelay, () {
       if (_disposed || _isConnecting || isConnected) return;
