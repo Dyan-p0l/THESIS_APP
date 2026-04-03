@@ -237,7 +237,7 @@ class _HistoryPageState extends State<HistoryPage> {
         break;
       case 'moderate':
         statusColor = Colors.orangeAccent;
-        icon = Icons.health_and_safety;
+        icon = Icons.info_outline;
         break;
       case 'spoiled':
         statusColor = Colors.redAccent;
