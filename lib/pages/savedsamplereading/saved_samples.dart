@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../db/dbhelper.dart';
 import '../../models/samples.dart';
+import 'dart:io';
+import 'package:csv/csv.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class SavedSamplesScreen extends StatefulWidget {
   const SavedSamplesScreen({super.key});
@@ -36,6 +39,141 @@ class _SavedSamplesScreenState extends State<SavedSamplesScreen> {
 
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
+
+    Future<void> _generateCsv() async {
+    // 1. Request storage permission
+      final status = await Permission.manageExternalStorage.request();
+      if (!status.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Storage permission denied.")),
+          );
+        }
+        return;
+      }
+
+      // 2. Fetch all readings for all samples
+      List<List<dynamic>> rows = [];
+
+      // Header
+      rows.add([
+        'id',
+        'sample_id',
+        'sample_label',
+        'capacitance_pf',
+        'carried_out_at',
+        'day_of_week',
+        'hour_of_day',
+        'elapsed_minutes_since_first_reading',
+        'label',
+      ]);
+
+      for (final sample in _samples) {
+        final readings = await DBhelper.instance.fetchReadingsBySample(sample.id!);
+
+        // Sort by time to compute elapsed minutes
+        final sorted = [...readings]
+          ..sort((a, b) => a.carriedOutAt.compareTo(b.carriedOutAt));
+
+        DateTime? firstReadingTime;
+
+        for (final reading in sorted) {
+          final dt = DateTime.parse(reading.carriedOutAt);
+
+          firstReadingTime ??= dt;
+
+          final elapsedMinutes = dt.difference(firstReadingTime).inMinutes;
+          final dayOfWeek = dt.weekday % 7; // 0=Sun, 6=Sat
+          final hourOfDay = dt.hour;
+
+          rows.add([
+            reading.id,
+            sample.id,
+            sample.label,
+            reading.value,
+            reading.carriedOutAt,
+            dayOfWeek,
+            hourOfDay,
+            elapsedMinutes,
+            '', // label — to be filled manually
+          ]);
+        }
+      }
+
+      // 3. Convert to CSV string
+      final csvData = const ListToCsvConverter().convert(rows);
+
+      // 4. Save to Downloads folder
+      final downloadsDir = Directory('/storage/emulated/0/Download');
+      if (!await downloadsDir.exists()) {
+        await downloadsDir.create(recursive: true);
+      }
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final file = File('${downloadsDir.path}/fish_readings_$timestamp.csv');
+      await file.writeAsString(csvData);
+
+      // 5. Show success dialog
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(screenWidth * 0.04),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "CSV file successfully generated.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: "Inter",
+                    fontSize: screenWidth * 0.038,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                SizedBox(height: screenHeight * 0.008),
+                Text(
+                  file.path,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: "Inter",
+                    fontSize: screenWidth * 0.028,
+                    color: Colors.black54,
+                  ),
+                ),
+                SizedBox(height: screenHeight * 0.018),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF56DFB1),
+                    foregroundColor: const Color(0xFF021E28),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(screenWidth * 0.05),
+                    ),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: screenWidth * 0.08,
+                      vertical: screenHeight * 0.012,
+                    ),
+                  ),
+                  child: Text(
+                    "OK",
+                    style: TextStyle(
+                      fontFamily: "Inter",
+                      fontWeight: FontWeight.w700,
+                      fontSize: screenWidth * 0.038,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    }
 
     return Scaffold(
       backgroundColor: bg,
@@ -171,6 +309,7 @@ class _SavedSamplesScreenState extends State<SavedSamplesScreen> {
                 width: screenWidth * 0.70,
                 child: ElevatedButton(
                   onPressed: _samples.isEmpty ? null : () {
+                    _generateCsv();
                     showDialog(
                       context: context,
                       builder: (_) => AlertDialog(

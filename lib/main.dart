@@ -22,7 +22,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         fontFamily: 'Inter',
       ),
-      home: const AnalysisScreen(),
+      home: const SavedSamplesScreen(),
       routes: {
         '/onboarding': (context) => const OnboardingScreen(),
         '/homepage': (context) => const ConnectivityScreen(),
