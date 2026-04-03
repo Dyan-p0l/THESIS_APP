@@ -32,7 +32,7 @@ class BleService {
 
   BleService._internal() {
     FlutterBluePlus.adapterState.listen((state) {
-      if (state == BluetoothAdapterState.on && _device == null) {
+      if (state == BluetoothAdapterState.on && !_isConnecting && !isConnected) {
         startAutoConnect();
       }
     });
@@ -51,6 +51,8 @@ class BleService {
 
   static const int _liveMedianWindowSize = 5;
   static const double _emaAlpha = 0.35;
+  static const Duration _scanTimeout = Duration(seconds: 12);
+  static const Duration _retryDelay = Duration(seconds: 2);
 
   BluetoothDevice? _device;
   BluetoothCharacteristic? _packetChar;
@@ -58,8 +60,10 @@ class BleService {
   StreamSubscription<List<ScanResult>>? _scanSub;
   StreamSubscription<BluetoothConnectionState>? _connSub;
   StreamSubscription<List<int>>? _notifySub;
+  StreamSubscription<bool>? _isScanningSub;
   Timer? _rssiTimer;
   Timer? _sessionInactivityTimer;
+  Timer? _retryTimer;
 
   final StreamController<bool> _connectionController =
       StreamController<bool>.broadcast();
@@ -82,6 +86,7 @@ class BleService {
 
   bool _isConnecting = false;
   bool _isArmed = false;
+  bool _disposed = false;
   Duration _sessionTimeout = const Duration(seconds: 20);
 
   Completer<AssessmentResult>? _pendingFinal;
@@ -92,7 +97,12 @@ class BleService {
   double? _liveEma;
 
   Future<void> startAutoConnect() async {
-    if (_isConnecting || FlutterBluePlus.isScanningNow || isConnected) return;
+    if (_disposed ||
+        _isConnecting ||
+        FlutterBluePlus.isScanningNow ||
+        isConnected) {
+      return;
+    }
 
     await _requestPermissions();
     await _ensureBluetoothOn();
@@ -132,17 +142,30 @@ class BleService {
   Future<void> disconnect() async {
     _cancelPendingAssessment("Disconnected");
     _rssiTimer?.cancel();
-    await _device?.disconnect();
+    _retryTimer?.cancel();
+
+    try {
+      await FlutterBluePlus.stopScan();
+    } catch (_) {}
+
+    try {
+      await _device?.disconnect();
+    } catch (_) {}
+
     _cleanupConnection();
     _connectionController.add(false);
+    _statusController.add("Disconnected");
   }
 
   void dispose() {
+    _disposed = true;
     _scanSub?.cancel();
     _connSub?.cancel();
     _notifySub?.cancel();
+    _isScanningSub?.cancel();
     _rssiTimer?.cancel();
     _sessionInactivityTimer?.cancel();
+    _retryTimer?.cancel();
     _connectionController.close();
     _rssiController.close();
     _capacitanceController.close();
@@ -169,74 +192,102 @@ class BleService {
   }
 
   Future<void> _startScan() async {
-    await FlutterBluePlus.startScan(
-      timeout: const Duration(seconds: 12),
-      withServices: [serviceUuid],
-    );
+    if (_disposed || _isConnecting || isConnected) return;
+
+    _statusController.add("Scanning for device...");
+
+    try {
+      await FlutterBluePlus.stopScan();
+    } catch (_) {}
 
     _scanSub?.cancel();
+    _isScanningSub?.cancel();
+
+    await FlutterBluePlus.startScan(timeout: _scanTimeout);
+
     _scanSub = FlutterBluePlus.scanResults.listen((results) async {
+      if (_isConnecting || isConnected) return;
+
       for (final r in results) {
         final advName = r.advertisementData.advName;
         final devName = r.device.platformName;
         final matchesName =
             advName == targetDeviceName || devName == targetDeviceName;
 
-        if (matchesName) {
+        if (!matchesName) continue;
+
+        _statusController.add("Device found. Connecting...");
+
+        try {
           await FlutterBluePlus.stopScan();
-          await _scanSub?.cancel();
-          await _connect(r.device);
-          break;
-        }
+        } catch (_) {}
+
+        await _scanSub?.cancel();
+        _scanSub = null;
+        await _connect(r.device);
+        break;
+      }
+    });
+
+    _isScanningSub = FlutterBluePlus.isScanning.listen((isScanning) {
+      if (!isScanning && !isConnected && !_isConnecting) {
+        _scheduleRetry("scan stopped without connection");
       }
     });
   }
 
   Future<void> _connect(BluetoothDevice device) async {
-    if (_isConnecting) return;
+    if (_disposed || _isConnecting) return;
+    _retryTimer?.cancel();
     _isConnecting = true;
     _device = device;
 
     try {
+      await device.disconnect().catchError((_) {});
+      await Future.delayed(const Duration(milliseconds: 150));
       await device.connect(timeout: const Duration(seconds: 10));
+
+      _connSub?.cancel();
+      _connSub = device.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.disconnected) {
+          _cancelPendingAssessment("Disconnected while waiting for result");
+          _cleanupConnection();
+          _connectionController.add(false);
+          _statusController.add("Disconnected");
+          _scheduleRetry("device disconnected");
+        }
+      });
+
+      await _discoverServices();
+      await _enableNotifications();
+      await _readAndEmitRssi();
+      _startRssiPolling();
+
       _connectionController.add(true);
       _statusController.add("Connected");
-    } catch (_) {
+    } catch (e) {
       _connectionController.add(false);
       _statusController.add("Connection failed");
-      _device = null;
-      _isConnecting = false;
-      _retry();
+      await _hardCleanupAfterConnectFailure();
+      _scheduleRetry("connect/discovery failure: $e");
       return;
+    } finally {
+      _isConnecting = false;
     }
-
-    _connSub?.cancel();
-    _connSub = device.connectionState.listen((state) {
-      if (state == BluetoothConnectionState.disconnected) {
-        _cancelPendingAssessment("Disconnected while waiting for result");
-        _cleanupConnection();
-        _connectionController.add(false);
-        _statusController.add("Disconnected");
-        _retry();
-      }
-    });
-
-    await _discoverServices();
-    await _enableNotifications();
-    await _readAndEmitRssi();
-    _startRssiPolling();
-    _isConnecting = false;
   }
 
   Future<void> _discoverServices() async {
     if (_device == null) return;
 
+    _packetChar = null;
     final services = await _device!.discoverServices();
+
     for (final service in services) {
       if (service.uuid != serviceUuid) continue;
       for (final c in service.characteristics) {
         if (c.uuid == packetUuid) {
           _packetChar = c;
+          break;
         }
       }
     }
@@ -247,14 +298,15 @@ class BleService {
   }
 
   Future<void> _enableNotifications() async {
-    if (_packetChar == null) return;
+    if (_packetChar == null) {
+      throw StateError("Packet characteristic missing before notify setup");
+    }
+
+    await _notifySub?.cancel();
+    _notifySub = null;
 
     await _packetChar!.setNotifyValue(true);
-
-    _notifySub?.cancel();
-    _notifySub = _packetChar!.onValueReceived.listen((value) {
-      _handlePacket(value);
-    });
+    _notifySub = _packetChar!.onValueReceived.listen(_handlePacket);
   }
 
   void _handlePacket(List<int> value) {
@@ -413,6 +465,21 @@ class BleService {
     } catch (_) {}
   }
 
+  Future<void> _hardCleanupAfterConnectFailure() async {
+    _notifySub?.cancel();
+    _notifySub = null;
+    _connSub?.cancel();
+    _connSub = null;
+    _rssiTimer?.cancel();
+    _packetChar = null;
+
+    try {
+      await _device?.disconnect();
+    } catch (_) {}
+
+    _device = null;
+  }
+
   void _cleanupConnection() {
     _scanSub?.cancel();
     _connSub?.cancel();
@@ -423,8 +490,13 @@ class BleService {
     _isConnecting = false;
   }
 
-  void _retry() {
-    Future.delayed(const Duration(seconds: 2), () {
+  void _scheduleRetry(String reason) {
+    if (_disposed || _isConnecting || isConnected) return;
+
+    _retryTimer?.cancel();
+    _statusController.add("Retrying BLE connection...");
+    _retryTimer = Timer(_retryDelay, () {
+      if (_disposed || _isConnecting || isConnected) return;
       startAutoConnect();
     });
   }
