@@ -75,7 +75,6 @@ class _SavedSamplesScreenState extends State<SavedSamplesScreen> {
       'day_of_week',
       'hour_of_day',
       'elapsed_minutes_since_first_reading',
-      'label',
       'category',
     ]);
 
@@ -99,7 +98,6 @@ class _SavedSamplesScreenState extends State<SavedSamplesScreen> {
           dt.weekday % 7,
           dt.hour,
           dt.difference(firstReadingTime).inMinutes,
-          '',
           reading.category,
         ]);
       }
@@ -189,6 +187,49 @@ class _SavedSamplesScreenState extends State<SavedSamplesScreen> {
     }
   }
   
+  Future<bool> _deleteSample(Sample sample) async {
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(screenWidth * 0.04),
+        ),
+        title: const Text(
+          "Delete Sample?",
+          style: TextStyle(fontFamily: "Inter", fontWeight: FontWeight.w800),
+        ),
+        content: Text(
+          "\"${sample.label}\" and all its readings will be permanently deleted.",
+          style: const TextStyle(fontFamily: "Inter", color: Colors.black54),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text("Cancel", style: TextStyle(fontFamily: "Inter")),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text("Delete", style: TextStyle(fontFamily: "Inter", fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await DBhelper.instance.deleteSample(sample.id!);
+      await _loadSamples(); // refresh the list
+    }
+
+    return confirmed ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
     const bg = Color(0xFF021E28);
@@ -275,46 +316,65 @@ class _SavedSamplesScreenState extends State<SavedSamplesScreen> {
                                 SizedBox(height: screenHeight * 0.018),
                             itemBuilder: (context, index) {
                               final sample = _samples[index];
-                              return SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    Navigator.pushNamed(
-                                      context,
-                                      '/sample_readings',
-                                      arguments: {
-                                        'sampleId': sample.id,
-                                        'sampleLabel': sample.label, 
-                                      },
-                                    );
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF0D2E3D),
-                                    foregroundColor: Colors.white,
-                                    elevation: 0,
-                                    padding: EdgeInsets.symmetric(
-                                      vertical: screenHeight * 0.022,
-                                      horizontal: screenWidth * 0.05,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(
-                                        screenWidth * 0.03,
-                                      ),
-                                      side: BorderSide(
-                                        color: Colors.white.withOpacity(0.08),
-                                        width: 1,
-                                      ),
-                                    ),
+                              return Dismissible(
+                                key: ValueKey(sample.id),
+                                direction: DismissDirection.endToStart,
+                                confirmDismiss: (_) => _deleteSample(sample),
+                                background: Container(
+                                  margin: EdgeInsets.symmetric(vertical: screenHeight * 0.009),
+                                  decoration: BoxDecoration(
+                                    color: Colors.redAccent,
+                                    borderRadius: BorderRadius.circular(screenWidth * 0.03),
                                   ),
-                                  child: Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      sample.label,
-                                      style: TextStyle(
-                                        fontFamily: "Inter",
-                                        fontSize: screenWidth * 0.042,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.white,
+                                  alignment: Alignment.centerRight,
+                                  padding: EdgeInsets.only(right: screenWidth * 0.05),
+                                  child: Icon(
+                                    Icons.delete_outline_rounded,
+                                    color: Colors.white,
+                                    size: screenWidth * 0.07,
+                                  ),
+                                ),
+                                child: SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton(
+                                      onPressed: () {
+                                      Navigator.pushNamed(
+                                        context,
+                                        '/sample_readings',
+                                        arguments: {
+                                          'sampleId': sample.id,
+                                          'sampleLabel': sample.label, 
+                                        },
+                                      );
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF0D2E3D),
+                                      foregroundColor: Colors.white,
+                                      elevation: 0,
+                                      padding: EdgeInsets.symmetric(
+                                        vertical: screenHeight * 0.022,
+                                        horizontal: screenWidth * 0.05,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(
+                                          screenWidth * 0.03,
+                                        ),
+                                        side: BorderSide(
+                                          color: Colors.white.withOpacity(0.08),
+                                          width: 1,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        sample.label,
+                                        style: TextStyle(
+                                          fontFamily: "Inter",
+                                          fontSize: screenWidth * 0.042,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white,
+                                        ),
                                       ),
                                     ),
                                   ),
