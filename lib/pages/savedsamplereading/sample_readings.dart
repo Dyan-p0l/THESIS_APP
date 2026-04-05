@@ -91,11 +91,11 @@ class _SampleReadingsScreenState extends State<SampleReadingsScreen> {
   IconData _categoryIcon(String? category) {
     switch (category) {
       case 'fresh':
-        return Icons.shield_outlined;
+        return Icons.health_and_safety;
       case 'moderate':
-        return Icons.shield_outlined;
+        return Icons.info_outline;
       case 'spoiled':
-        return Icons.warning_amber_rounded;
+        return Icons.report_problem_outlined;
       default:
         return Icons.help_outline;
     }

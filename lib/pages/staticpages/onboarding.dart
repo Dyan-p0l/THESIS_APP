@@ -158,7 +158,7 @@ class OnboardingScreen2 extends StatelessWidget {
                 children: [
                   Center(
                     child: Image.asset(
-                      "assets/images/onboardingpage/presko_logo_dark.png",
+                      "assets/images/onboardingpage/pressko-onboarding-logo.png",
                       width: logoWidth,
                     ),
                   ),
@@ -241,7 +241,7 @@ class OnboardingScreen3 extends StatelessWidget {
                 children: [
                   Center(
                     child: Image.asset(
-                      "assets/images/onboardingpage/presko_logo_light.png",
+                      "assets/images/onboardingpage/pressko-onboarding-logo.png",
                       width: logoWidth,
                     ),
                   ),
