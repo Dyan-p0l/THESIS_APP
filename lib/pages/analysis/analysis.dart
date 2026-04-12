@@ -100,12 +100,15 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
 
 
       if (result.sessionValid && result.finalPf != null) {
+        final category = await _pickCategory();
+        if (!mounted) return;
+
         _currentReadingId = await DBhelper.instance.insertReading(
           Reading(
             value: result.finalPf!,
             carriedOutAt: DateTime.now().toIso8601String(),
             isSaved: false,
-            category: _randomCategory(),
+            category: category,
           ),
         );
       }
@@ -125,6 +128,63 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         _statusText = "Error: $e";
       });
     }
+  }
+  
+
+  Future<String> _pickCategory() async {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    const fresh    = Color(0xFF56DFB1);
+    const moderate = Color(0xFFFFAA00);
+    const spoiled  = Color(0xFFFF5252);
+    const bg       = Color(0xFF021E28);
+
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(screenWidth * 0.05),
+        ),
+        title: Text(
+          "Label this reading",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: "Inter",
+            fontWeight: FontWeight.w800,
+            fontSize: screenWidth * 0.048,
+            color: bg,
+          ),
+        ),
+        content: Text(
+          "Based on physical assessment,\nhow fresh is the fish?",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: "Inter",
+            fontSize: screenWidth * 0.035,
+            color: Colors.black54,
+          ),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actionsPadding: EdgeInsets.fromLTRB(
+          screenWidth * 0.04,
+          0,
+          screenWidth * 0.04,
+          screenHeight * 0.02,
+        ),
+        actions: [
+          _CategoryButton(label: "FRESH",    color: fresh,    onTap: () => Navigator.pop(dialogContext, 'fresh')),
+          SizedBox(height: screenHeight * 0.01),
+          _CategoryButton(label: "MODERATE", color: moderate, onTap: () => Navigator.pop(dialogContext, 'moderate')),
+          SizedBox(height: screenHeight * 0.01),
+          _CategoryButton(label: "SPOILED",  color: spoiled,  onTap: () => Navigator.pop(dialogContext, 'spoiled')),
+        ],
+      ),
+    );
+
+    return result ?? 'fresh'; // fallback, should never hit since barrierDismissible is false
   }
 
   @override
@@ -344,6 +404,45 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryButton extends StatelessWidget {
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _CategoryButton({
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: onTap,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: const Color(0xFF021E28),
+          padding: EdgeInsets.symmetric(vertical: screenWidth * 0.035),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(screenWidth * 0.03),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: "Inter",
+            fontWeight: FontWeight.w800,
+            fontSize: screenWidth * 0.042,
+          ),
         ),
       ),
     );

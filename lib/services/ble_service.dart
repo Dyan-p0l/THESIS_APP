@@ -6,8 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 class AssessmentResult {
   final int seq;
-  final double ide1Pf;
-  final double ide2Pf;
+  final double idePf;
   final double finalPf;
   final bool sessionValid;
   final int stableSampleCount;
@@ -16,8 +15,7 @@ class AssessmentResult {
 
   const AssessmentResult({
     required this.seq,
-    required this.ide1Pf,
-    required this.ide2Pf,
+    required this.idePf,
     required this.finalPf,
     required this.sessionValid,
     required this.stableSampleCount,
@@ -43,9 +41,14 @@ class BleService {
   final Guid packetUuid = Guid("6a6e2d3b-2c5f-4d3a-9b41-2c8a9c0a9b11");
   final String targetDeviceName = "FDC1004_IDE";
 
+  // Packet flags — single-IDE layout
+  // Bit 0 : sensor reading is stable
+  // Bit 1 : IDE reading is valid
+  // Bit 4 : session as a whole is valid
+  // Bit 5 : this is the final packet for the session
+  // Bit 6 : value was clamped by firmware
   static const int flagStableNow = 1 << 0;
-  static const int flagIde1Valid = 1 << 1;
-  static const int flagIde2Valid = 1 << 2;
+  static const int flagIdeValid = 1 << 1;
   static const int flagSessionValid = 1 << 4;
   static const int flagFinal = 1 << 5;
   static const int flagClamped = 1 << 6;
@@ -54,6 +57,13 @@ class BleService {
   static const double _emaAlpha = 0.35;
   static const Duration _scanTimeout = Duration(seconds: 12);
   static const Duration _retryDelay = Duration(seconds: 2);
+
+  // Minimum packet size for the new layout:
+  //   uint16_t seq    → 2 bytes
+  //   int16_t  ide_mpF → 2 bytes
+  //   uint8_t  flags  → 1 byte
+  //   total           → 5 bytes
+  static const int _minPacketLength = 5;
 
   BluetoothDevice? _device;
   BluetoothCharacteristic? _packetChar;
@@ -178,6 +188,10 @@ class BleService {
     _stableController.close();
     _statusController.close();
   }
+
+  // ---------------------------------------------------------------------------
+  // BLE plumbing
+  // ---------------------------------------------------------------------------
 
   Future<void> _requestPermissions() async {
     await [
@@ -325,8 +339,16 @@ class BleService {
     _notifySub = _packetChar!.onValueReceived.listen(_handlePacket);
   }
 
+  // ---------------------------------------------------------------------------
+  // Packet parsing — new single-IDE layout
+  //
+  //   Offset  Size  Field
+  //   0       2     seq      (uint16, little-endian)
+  //   2       2     ide_mpF  (int16,  little-endian)  — millipicofarads
+  //   4       1     flags    (uint8)
+  // ---------------------------------------------------------------------------
   void _handlePacket(List<int> value) {
-    if (value.length < 7) return;
+    if (value.length < _minPacketLength) return;
     if (!_isArmed) return;
 
     _resetSessionInactivityTimer();
@@ -335,44 +357,39 @@ class BleService {
     final bd = ByteData.sublistView(bytes);
 
     final seq = bd.getUint16(0, Endian.little);
+    final ideMpF = bd.getInt16(2, Endian.little);
+    final flags = bytes[4];
+
+    // Deduplicate packets with the same sequence number.
     if (_lastSeq == seq) return;
     _lastSeq = seq;
 
-    final ide1mpF = bd.getInt16(2, Endian.little);
-    final ide2mpF = bd.getInt16(4, Endian.little);
-    final flags = bytes[6];
-
     final stableNow = (flags & flagStableNow) != 0;
-    final ide1Valid = (flags & flagIde1Valid) != 0;
-    final ide2Valid = (flags & flagIde2Valid) != 0;
+    final ideValid = (flags & flagIdeValid) != 0;
     final sessionValid = (flags & flagSessionValid) != 0;
     final isFinal = (flags & flagFinal) != 0;
     final clamped = (flags & flagClamped) != 0;
 
-    final ide1Pf = ide1mpF / 1000.0;
-    final ide2Pf = ide2mpF / 1000.0;
-    final packetPf = _combineIdeValues(
-      ide1Pf: ide1Pf,
-      ide2Pf: ide2Pf,
-      ide1Valid: ide1Valid,
-      ide2Valid: ide2Valid,
-    );
+    final idePf = ideMpF / 1000.0;
 
     _stableController.add(stableNow);
 
     if (!isFinal) {
-      if (stableNow && packetPf != null) {
-        _stableSamples.add(packetPf);
-        final liveFiltered = _applyLiveFlutterFilter(packetPf);
+      if (stableNow && ideValid) {
+        _stableSamples.add(idePf);
+        final liveFiltered = _applyLiveFlutterFilter(idePf);
         _capacitanceController.add(liveFiltered);
         _statusController.add("Receiving stable samples...");
       }
       return;
     }
 
+    // --- Final packet ---
     _sessionInactivityTimer?.cancel();
 
-    final finalPf = _computeFinalFlutterValue(fallbackPacketPf: packetPf);
+    final finalPf = _computeFinalFlutterValue(
+      fallbackPacketPf: ideValid ? idePf : null,
+    );
 
     _capacitanceController.add(finalPf);
     _stableController.add(sessionValid);
@@ -384,8 +401,7 @@ class BleService {
       _pendingFinal!.complete(
         AssessmentResult(
           seq: seq,
-          ide1Pf: ide1Pf,
-          ide2Pf: ide2Pf,
+          idePf: idePf,
           finalPf: finalPf,
           sessionValid: sessionValid,
           stableSampleCount: _stableSamples.length,
@@ -398,17 +414,9 @@ class BleService {
     _isArmed = false;
   }
 
-  double? _combineIdeValues({
-    required double ide1Pf,
-    required double ide2Pf,
-    required bool ide1Valid,
-    required bool ide2Valid,
-  }) {
-    if (ide1Valid && ide2Valid) return (ide1Pf + ide2Pf) / 2.0;
-    if (ide1Valid) return ide1Pf;
-    if (ide2Valid) return ide2Pf;
-    return null;
-  }
+  // ---------------------------------------------------------------------------
+  // Signal filtering helpers (unchanged)
+  // ---------------------------------------------------------------------------
 
   double _applyLiveFlutterFilter(double value) {
     _liveMedianWindow.add(value);
@@ -436,6 +444,10 @@ class BleService {
     if (n.isOdd) return sorted[n ~/ 2];
     return (sorted[(n ~/ 2) - 1] + sorted[n ~/ 2]) / 2.0;
   }
+
+  // ---------------------------------------------------------------------------
+  // Session / inactivity timer helpers
+  // ---------------------------------------------------------------------------
 
   void _resetSessionInactivityTimer() {
     _sessionInactivityTimer?.cancel();
@@ -466,6 +478,10 @@ class BleService {
     _liveEma = null;
   }
 
+  // ---------------------------------------------------------------------------
+  // RSSI polling
+  // ---------------------------------------------------------------------------
+
   void _startRssiPolling() {
     _rssiTimer?.cancel();
     _rssiTimer = Timer.periodic(const Duration(seconds: 2), (_) {
@@ -480,6 +496,10 @@ class BleService {
       _rssiController.add(rssi);
     } catch (_) {}
   }
+
+  // ---------------------------------------------------------------------------
+  // Connection cleanup helpers
+  // ---------------------------------------------------------------------------
 
   Future<void> _hardCleanupAfterConnectFailure() async {
     _notifySub?.cancel();

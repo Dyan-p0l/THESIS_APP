@@ -49,21 +49,21 @@ class _HistoryPageState extends State<HistoryPage> {
     switch (selectedSort) {
       case SortType.date:
         list.sort((a, b) => b.carriedOutAt.compareTo(a.carriedOutAt));
-        break;
+      break;
       case SortType.sample:
         list.sort((a, b) {
           final labelA = a.sampleId != null ? (sampleLabels[a.sampleId] ?? 'zzz') : 'zzz';
           final labelB = b.sampleId != null ? (sampleLabels[b.sampleId] ?? 'zzz') : 'zzz';
           return labelA.compareTo(labelB);
         });
-        break;
+      break;
       case SortType.category:
         list.sort((a, b) {
           final catA = a.category ?? 'zzz';
           final catB = b.category ?? 'zzz';
           return catA.compareTo(catB);
         });
-        break;
+      break;
     }
 
     return list;
@@ -237,7 +237,7 @@ class _HistoryPageState extends State<HistoryPage> {
         break;
       case 'moderate':
         statusColor = Colors.orangeAccent;
-        icon = Icons.health_and_safety;
+        icon = Icons.info_outline;
         break;
       case 'spoiled':
         statusColor = Colors.redAccent;
@@ -377,4 +377,4 @@ class _HistoryPageState extends State<HistoryPage> {
       ),
     );
   }
-}
+} 

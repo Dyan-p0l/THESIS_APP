@@ -47,14 +47,55 @@ class _SampleReadingsScreenState extends State<SampleReadingsScreen> {
     }
   }
 
+  Future<bool?> _deleteReading(Reading reading) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Text(
+          "Delete Reading?",
+          style: TextStyle(fontFamily: "Inter", fontWeight: FontWeight.w800),
+        ),
+        content: Text(
+          "Reading ID ${reading.id} (${reading.value.toStringAsFixed(2)} pF) will be permanently deleted.",
+          style: const TextStyle(fontFamily: "Inter", color: Colors.black54),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text("Cancel", style: TextStyle(fontFamily: "Inter")),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text("Delete", style: TextStyle(fontFamily: "Inter", fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await DBhelper.instance.deleteReading(reading.id!);
+      await loadReadings(); // refresh the list
+    }
+
+    return confirmed;
+  }
+
   IconData _categoryIcon(String? category) {
     switch (category) {
       case 'fresh':
-        return Icons.shield_outlined;
+        return Icons.health_and_safety;
       case 'moderate':
-        return Icons.shield_outlined;
+        return Icons.info_outline;
       case 'spoiled':
-        return Icons.warning_amber_rounded;
+        return Icons.report_problem_outlined;
       default:
         return Icons.help_outline;
     }
@@ -211,96 +252,113 @@ class _SampleReadingsScreenState extends State<SampleReadingsScreen> {
                                   final icon = _categoryIcon(reading.category);
                                   final label = _categoryLabel(reading.category);
 
-                                  return Padding(
-                                    padding: EdgeInsets.only(
-                                      bottom: screenHeight * 0.014,
+                                  return Dismissible(
+                                    key: ValueKey(reading.id),
+                                    direction: DismissDirection.endToStart,
+                                    confirmDismiss: (_) => _deleteReading(reading),
+                                    background: Container(
+                                      margin: EdgeInsets.only(bottom: screenHeight * 0.014),
+                                      decoration: BoxDecoration(
+                                        color: Colors.redAccent,
+                                        borderRadius: BorderRadius.circular(screenWidth * 0.03),
+                                      ),
+                                      alignment: Alignment.centerRight,
+                                      padding: EdgeInsets.only(right: screenWidth * 0.05),
+                                      child: Icon(
+                                        Icons.delete_outline_rounded,
+                                        color: Colors.white,
+                                        size: screenWidth * 0.07,
+                                      ),
                                     ),
-                                    child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                      children: [
-                                        // Category icon
-                                        Icon(
-                                          icon,
-                                          color: color,
-                                          size: screenWidth * 0.09,
-                                        ),
-
-                                        SizedBox(width: screenWidth * 0.03),
-
-                                        // Capacitance value
-                                        Text(
-                                          "${reading.value.toStringAsFixed(2)}pF",
-                                          style: TextStyle(
-                                            fontFamily: "Inter",
-                                            fontSize: screenWidth * 0.055,
-                                            fontWeight: FontWeight.w800,
-                                            color: Colors.white,
+                                    child: Padding(
+                                      padding: EdgeInsets.only(
+                                        bottom: screenHeight * 0.014,
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.center,
+                                        children:[                                          // Category icon
+                                          Icon(
+                                            icon,
+                                            color: color,
+                                            size: screenWidth * 0.09,
                                           ),
-                                        ),
 
-                                        SizedBox(width: screenWidth * 0.03),
+                                          SizedBox(width: screenWidth * 0.03),
 
-                                        // Divider line
-                                        Container(
-                                          width: 1,
-                                          height: screenHeight * 0.045,
-                                          color: Colors.white24,
-                                        ),
+                                          Text(
+                                            "${reading.value.toStringAsFixed(2)}pF",
+                                            style: TextStyle(
+                                              fontFamily: "Inter",
+                                              fontSize: screenWidth * 0.055,
+                                              fontWeight: FontWeight.w800,
+                                              color: Colors.white,
+                                            ),
+                                          ),
 
-                                        SizedBox(width: screenWidth * 0.03),
+                                          SizedBox(width: screenWidth * 0.03),
 
-                                        // ID + time
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                          // Divider line
+                                          Container(
+                                            width: 1,
+                                            height: screenHeight * 0.045,
+                                            color: Colors.white24,
+                                          ),
+
+                                          SizedBox(width: screenWidth * 0.03),
+
+                                          // ID + time
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'ID: ${reading.id ?? '-'}',
+                                                  style: TextStyle(
+                                                    fontFamily: "Inter",
+                                                    fontSize: screenWidth * 0.03,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: accent,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  _formatTime(reading.carriedOutAt),
+                                                  style: TextStyle(
+                                                    fontFamily: "Inter",
+                                                    fontSize: screenWidth * 0.028,
+                                                    color: Colors.white54,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+
+                                        // Category label
+                                          Column(
+                                            crossAxisAlignment: CrossAxisAlignment.end,
                                             children: [
                                               Text(
-                                                'ID: ${reading.id ?? '-'}',
+                                                "CATEGORY:",
                                                 style: TextStyle(
                                                   fontFamily: "Inter",
-                                                  fontSize: screenWidth * 0.03,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: accent,
+                                                  fontSize: screenWidth * 0.026,
+                                                  color: Colors.white54,
+                                                  letterSpacing: 0.3,
                                                 ),
                                               ),
                                               Text(
-                                                _formatTime(reading.carriedOutAt),
+                                                label,
                                                 style: TextStyle(
                                                   fontFamily: "Inter",
-                                                  fontSize: screenWidth * 0.028,
-                                                  color: Colors.white54,
+                                                  fontSize: screenWidth * 0.03,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: color,
+                                                  letterSpacing: 0.5,
                                                 ),
                                               ),
                                             ],
                                           ),
-                                        ),
-
-                                        // Category label
-                                        Column(
-                                          crossAxisAlignment: CrossAxisAlignment.end,
-                                          children: [
-                                            Text(
-                                              "CATEGORY:",
-                                              style: TextStyle(
-                                                fontFamily: "Inter",
-                                                fontSize: screenWidth * 0.026,
-                                                color: Colors.white54,
-                                                letterSpacing: 0.3,
-                                              ),
-                                            ),
-                                            Text(
-                                              label,
-                                              style: TextStyle(
-                                                fontFamily: "Inter",
-                                                fontSize: screenWidth * 0.03,
-                                                fontWeight: FontWeight.w700,
-                                                color: color,
-                                                letterSpacing: 0.5,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   );
                                 }),

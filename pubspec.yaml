@@ -40,6 +40,9 @@ dependencies:
   sqflite: ^2.3.3
   path: ^1.9.0
 
+  csv: ^6.0.0
+  path_provider: ^2.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -50,6 +53,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+
+  flutter_launcher_icons: ^0.14.3
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -68,6 +73,7 @@ flutter:
   assets:
     - assets/images/onboardingpage/
     - assets/images/analysis/results/
+    - assets/images/PRESSKO-ICON.png
 
   fonts:
     - family: Inter
@@ -133,3 +139,9 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/onboardingpage/presko_logo_circular.png"
+  min_sdk_android: 21
