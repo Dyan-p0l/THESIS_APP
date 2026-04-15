@@ -52,6 +52,7 @@ class BleService {
   static const int flagSessionValid = 1 << 4;
   static const int flagFinal = 1 << 5;
   static const int flagClamped = 1 << 6;
+  static const int flagCalibration = 1 << 7;
 
   static const int _liveMedianWindowSize = 5;
   static const double _emaAlpha = 0.35;
@@ -86,6 +87,13 @@ class BleService {
       StreamController<bool>.broadcast();
   final StreamController<String> _statusController =
       StreamController<String>.broadcast();
+  final StreamController<double> _calibrationController =
+      StreamController<double>.broadcast();
+
+  Stream<double> get calibrationStream => _calibrationController.stream;
+
+  double? _latestCalibrationPf;
+  double? get latestCalibrationPf => _latestCalibrationPf;
 
   Stream<bool> get connectionStream => _connectionController.stream;
   Stream<int> get rssiStream => _rssiController.stream;
@@ -187,6 +195,7 @@ class BleService {
     _capacitanceController.close();
     _stableController.close();
     _statusController.close();
+    _calibrationController.close();
   }
 
   // ---------------------------------------------------------------------------
@@ -349,9 +358,6 @@ class BleService {
   // ---------------------------------------------------------------------------
   void _handlePacket(List<int> value) {
     if (value.length < _minPacketLength) return;
-    if (!_isArmed) return;
-
-    _resetSessionInactivityTimer();
 
     final bytes = Uint8List.fromList(value);
     final bd = ByteData.sublistView(bytes);
@@ -369,9 +375,28 @@ class BleService {
     final sessionValid = (flags & flagSessionValid) != 0;
     final isFinal = (flags & flagFinal) != 0;
     final clamped = (flags & flagClamped) != 0;
+    final isCalibration = (flags & flagCalibration) != 0;
 
     final idePf = ideMpF / 1000.0;
 
+    // -------------------------------------------------
+    // Calibration packet: accept even if not armed
+    // -------------------------------------------------
+    if (isCalibration) {
+      if (ideValid) {
+        _latestCalibrationPf = idePf;
+        _calibrationController.add(idePf);
+        _statusController.add("Calibration baseline received");
+      } else {
+        _statusController.add("Calibration packet received but invalid");
+      }
+      return;
+    }
+
+    // Ignore non-calibration packets unless an assessment is active
+    if (!_isArmed) return;
+
+    _resetSessionInactivityTimer();
     _stableController.add(stableNow);
 
     if (!isFinal) {
