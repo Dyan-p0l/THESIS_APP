@@ -7,7 +7,9 @@ import 'package:permission_handler/permission_handler.dart';
 class AssessmentResult {
   final int seq;
   final double idePf;
+  final double ideDiffPf;
   final double finalPf;
+  final double finalIdeDiffPf;
   final bool sessionValid;
   final int stableSampleCount;
   final int flags;
@@ -16,7 +18,9 @@ class AssessmentResult {
   const AssessmentResult({
     required this.seq,
     required this.idePf,
+    required this.ideDiffPf,
     required this.finalPf,
+    required this.finalIdeDiffPf,
     required this.sessionValid,
     required this.stableSampleCount,
     required this.flags,
@@ -59,12 +63,14 @@ class BleService {
   static const Duration _scanTimeout = Duration(seconds: 12);
   static const Duration _retryDelay = Duration(seconds: 2);
 
-  // Minimum packet size for the new layout:
-  //   uint16_t seq    → 2 bytes
-  //   int16_t  ide_mpF → 2 bytes
-  //   uint8_t  flags  → 1 byte
-  //   total           → 5 bytes
-  static const int _minPacketLength = 5;
+  // Packet layout:
+  //
+  //   Offset  Size  Field
+  //   0       2     seq           (uint16, little-endian)
+  //   2       2     ide_mpF       (int16,  little-endian)
+  //   4       2     ideDiff_mpF   (int16,  little-endian)
+  //   6       1     flags         (uint8)
+  static const int _minPacketLength = 7;
 
   BluetoothDevice? _device;
   BluetoothCharacteristic? _packetChar;
@@ -89,17 +95,21 @@ class BleService {
       StreamController<String>.broadcast();
   final StreamController<double> _calibrationController =
       StreamController<double>.broadcast();
-
-  Stream<double> get calibrationStream => _calibrationController.stream;
+  final StreamController<double> _ideDiffController =
+      StreamController<double>.broadcast();
 
   double? _latestCalibrationPf;
   double? get latestCalibrationPf => _latestCalibrationPf;
+  double? _latestCalibrationDiffPf;
+  double? get latestCalibrationDiffPf => _latestCalibrationDiffPf;
 
   Stream<bool> get connectionStream => _connectionController.stream;
   Stream<int> get rssiStream => _rssiController.stream;
   Stream<double> get capacitanceStream => _capacitanceController.stream;
   Stream<bool> get stableStream => _stableController.stream;
   Stream<String> get statusStream => _statusController.stream;
+  Stream<double> get calibrationStream => _calibrationController.stream;
+  Stream<double> get ideDiffStream => _ideDiffController.stream;
 
   bool _connected = false;
   bool get isConnected => _connected;
@@ -113,6 +123,7 @@ class BleService {
   int? _lastSeq;
 
   final List<double> _stableSamples = <double>[];
+  final List<double> _stableIdeDiffSamples = <double>[];
   final List<double> _liveMedianWindow = <double>[];
   double? _liveEma;
 
@@ -149,6 +160,7 @@ class BleService {
     _isArmed = true;
     _lastSeq = null;
     _stableSamples.clear();
+    _stableIdeDiffSamples.clear();
     _liveMedianWindow.clear();
     _liveEma = null;
     _stableController.add(false);
@@ -196,6 +208,7 @@ class BleService {
     _stableController.close();
     _statusController.close();
     _calibrationController.close();
+    _ideDiffController.close();
   }
 
   // ---------------------------------------------------------------------------
@@ -349,12 +362,13 @@ class BleService {
   }
 
   // ---------------------------------------------------------------------------
-  // Packet parsing — new single-IDE layout
+  // Packet parsing — 7-byte single-IDE layout
   //
   //   Offset  Size  Field
-  //   0       2     seq      (uint16, little-endian)
-  //   2       2     ide_mpF  (int16,  little-endian)  — millipicofarads
-  //   4       1     flags    (uint8)
+  //   0       2     seq           (uint16, little-endian)
+  //   2       2     ide_mpF       (int16, little-endian)
+  //   4       2     ideDiff_mpF   (int16, little-endian)
+  //   6       1     flags         (uint8)
   // ---------------------------------------------------------------------------
   void _handlePacket(List<int> value) {
     if (value.length < _minPacketLength) return;
@@ -364,9 +378,9 @@ class BleService {
 
     final seq = bd.getUint16(0, Endian.little);
     final ideMpF = bd.getInt16(2, Endian.little);
-    final flags = bytes[4];
+    final ideDiffMpF = bd.getInt16(4, Endian.little);
+    final flags = bytes[6];
 
-    // Deduplicate packets with the same sequence number.
     if (_lastSeq == seq) return;
     _lastSeq = seq;
 
@@ -375,25 +389,27 @@ class BleService {
     final sessionValid = (flags & flagSessionValid) != 0;
     final isFinal = (flags & flagFinal) != 0;
     final clamped = (flags & flagClamped) != 0;
+
+    // If you kept the calibration packet support:
     final isCalibration = (flags & flagCalibration) != 0;
 
     final idePf = ideMpF / 1000.0;
+    final ideDiffPf = ideDiffMpF / 1000.0;
 
-    // -------------------------------------------------
-    // Calibration packet: accept even if not armed
-    // -------------------------------------------------
+    // If you kept calibration support, handle it here before !_isArmed check.
     if (isCalibration) {
       if (ideValid) {
         _latestCalibrationPf = idePf;
+        _latestCalibrationDiffPf = ideDiffPf;
+
         _calibrationController.add(idePf);
+        _ideDiffController.add(ideDiffPf);
+
         _statusController.add("Calibration baseline received");
-      } else {
-        _statusController.add("Calibration packet received but invalid");
       }
       return;
     }
 
-    // Ignore non-calibration packets unless an assessment is active
     if (!_isArmed) return;
 
     _resetSessionInactivityTimer();
@@ -402,21 +418,29 @@ class BleService {
     if (!isFinal) {
       if (stableNow && ideValid) {
         _stableSamples.add(idePf);
+        _stableIdeDiffSamples.add(ideDiffPf);
+
         final liveFiltered = _applyLiveFlutterFilter(idePf);
         _capacitanceController.add(liveFiltered);
+        _ideDiffController.add(ideDiffPf);
+
         _statusController.add("Receiving stable samples...");
       }
       return;
     }
 
-    // --- Final packet ---
     _sessionInactivityTimer?.cancel();
 
     final finalPf = _computeFinalFlutterValue(
       fallbackPacketPf: ideValid ? idePf : null,
     );
 
+    final finalIdeDiffPf = _computeFinalIdeDiffFlutterValue(
+      fallbackPacketPf: ideValid ? ideDiffPf : null,
+    );
+
     _capacitanceController.add(finalPf);
+    _ideDiffController.add(finalIdeDiffPf);
     _stableController.add(sessionValid);
     _statusController.add(
       sessionValid ? "Assessment complete" : "Assessment invalid / timeout",
@@ -427,7 +451,9 @@ class BleService {
         AssessmentResult(
           seq: seq,
           idePf: idePf,
+          ideDiffPf: ideDiffPf,
           finalPf: finalPf,
+          finalIdeDiffPf: finalIdeDiffPf,
           sessionValid: sessionValid,
           stableSampleCount: _stableSamples.length,
           flags: flags,
@@ -440,7 +466,7 @@ class BleService {
   }
 
   // ---------------------------------------------------------------------------
-  // Signal filtering helpers (unchanged)
+  // Signal filtering helpers
   // ---------------------------------------------------------------------------
 
   double _applyLiveFlutterFilter(double value) {
@@ -460,6 +486,11 @@ class BleService {
   double _computeFinalFlutterValue({double? fallbackPacketPf}) {
     if (_stableSamples.isEmpty) return fallbackPacketPf ?? double.nan;
     return _median(_stableSamples);
+  }
+
+  double _computeFinalIdeDiffFlutterValue({double? fallbackPacketPf}) {
+    if (_stableIdeDiffSamples.isEmpty) return fallbackPacketPf ?? double.nan;
+    return _median(_stableIdeDiffSamples);
   }
 
   double _median(List<double> values) {
@@ -499,6 +530,7 @@ class BleService {
     _pendingFinal = null;
     _isArmed = false;
     _stableSamples.clear();
+    _stableIdeDiffSamples.clear();
     _liveMedianWindow.clear();
     _liveEma = null;
   }
