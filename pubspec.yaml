@@ -42,6 +42,7 @@ dependencies:
 
   csv: ^6.0.0
   path_provider: ^2.1.2
+  onnxruntime: ^1.0.0
 
 dev_dependencies:
   flutter_test:
@@ -74,6 +75,7 @@ flutter:
     - assets/images/onboardingpage/
     - assets/images/analysis/results/
     - assets/images/PRESSKO-ICON.png
+    - assets/ml_models/
 
   fonts:
     - family: Inter
