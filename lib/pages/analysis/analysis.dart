@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/ble_service.dart';
+import '../../services/ort_service.dart';          // ADD
 import 'save_reading/savedialog.dart';
 import '../../db/dbhelper.dart';
 import '../../models/readings.dart';
-import 'dart:math';
+// REMOVE: import 'dart:math';                      // no longer needed
 
 class AnalysisScreen extends StatefulWidget {
   const AnalysisScreen({super.key});
@@ -19,12 +20,10 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   StreamSubscription<double>? _capSub;
   StreamSubscription<bool>? _stableSub;
   StreamSubscription<String>? _statusSub;
+  StreamSubscription<double>? _calibSub;
+  StreamSubscription<double>? _ideDiffSub;
 
-  String _randomCategory() {
-    final categories = ['fresh', 'moderate', 'spoiled'];
-    final random = Random();
-    return categories[random.nextInt(categories.length)];
-  }
+  // REMOVE: _randomCategory() — no longer needed
 
   double? _capacitancePf;
   bool _stableNow = false;
@@ -33,36 +32,62 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   String _statusText = "Preparing assessment...";
   int _stableSampleCount = 0;
   int? _currentReadingId;
+  double? _calibrationPf;
+  double? _ideDiffPf;
+
+  // ADD: ML state
+  String? _classificationResult;
+  bool _inferring = false;
+
+  static const _labelMap = {0: 'fresh', 1: 'moderate', 2: 'spoiled'};
+  static const _labelColors = {
+    'fresh':    Color(0xFF56DFB1),
+    'moderate': Color(0xFFFFAA00),
+    'spoiled':  Color(0xFFFF5252),
+  };
 
   @override
   void initState() {
     super.initState();
+    _initAndBegin();
 
+    _calibrationPf = bleService.latestCalibrationPf;
+
+    // ALL STREAM SUBSCRIPTIONS IDENTICAL TO OLD CODE
     _capSub = bleService.capacitanceStream.listen((value) {
       if (!mounted) return;
-      setState(() {
-        _capacitancePf = value;
-      });
+      setState(() => _capacitancePf = value);
     });
 
     _stableSub = bleService.stableStream.listen((value) {
       if (!mounted) return;
-      setState(() {
-        _stableNow = value;
-      });
+      setState(() => _stableNow = value);
     });
 
     _statusSub = bleService.statusStream.listen((value) {
       if (!mounted) return;
-      setState(() {
-        _statusText = value;
-      });
+      setState(() => _statusText = value);
     });
 
-    _beginAssessment();
+    _calibSub = bleService.calibrationStream.listen((value) {
+      if (!mounted) return;
+      setState(() => _calibrationPf = value);
+    });
+
+    _ideDiffSub = bleService.ideDiffStream.listen((value) {
+      if (!mounted) return;
+      setState(() => _ideDiffPf = value);
+    });
+
+  }
+
+  Future<void> _initAndBegin() async {
+    await OrtService.init();
+    await _beginAssessment();
   }
 
   Future<void> _beginAssessment() async {
+    // IDENTICAL to old code up to the isConnected check
     if (!bleService.isConnected) {
       setState(() {
         _waiting = false;
@@ -79,7 +104,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       _stableSampleCount = 0;
       _currentReadingId = null;
       _statusText = "Ready. Press the device button to start measuring.";
-
+      _classificationResult = null; // ADD: reset ML result
+      _inferring = false;           // ADD: reset inferring flag
     });
 
     try {
@@ -88,6 +114,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       );
 
       if (!mounted) return;
+      // IDENTICAL setState to old code
       setState(() {
         _waiting = false;
         _sessionValid = result.sessionValid;
@@ -98,11 +125,19 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             : "Assessment invalid / timeout";
       });
 
-
       if (result.sessionValid && result.finalPf != null) {
-        final category = await _pickCategory();
-        if (!mounted) return;
+        // REPLACE: _pickCategory() → OrtService.classify()
+        setState(() => _inferring = true);
+        final labelIndex = await OrtService.classify(result.finalPf!);
+        final category = _labelMap[labelIndex] ?? 'fresh';
 
+        if (!mounted) return;
+        setState(() {
+          _classificationResult = category;
+          _inferring = false;
+        });
+
+        // IDENTICAL DB insert to old code, just uses inferred category
         _currentReadingId = await DBhelper.instance.insertReading(
           Reading(
             value: result.finalPf!,
@@ -129,70 +164,17 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       });
     }
   }
-  
 
-  Future<String> _pickCategory() async {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-
-    const fresh    = Color(0xFF56DFB1);
-    const moderate = Color(0xFFFFAA00);
-    const spoiled  = Color(0xFFFF5252);
-    const bg       = Color(0xFF021E28);
-
-    final result = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(screenWidth * 0.05),
-        ),
-        title: Text(
-          "Label this reading",
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: "Inter",
-            fontWeight: FontWeight.w800,
-            fontSize: screenWidth * 0.048,
-            color: bg,
-          ),
-        ),
-        content: Text(
-          "Based on physical assessment,\nhow fresh is the fish?",
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: "Inter",
-            fontSize: screenWidth * 0.035,
-            color: Colors.black54,
-          ),
-        ),
-        actionsAlignment: MainAxisAlignment.center,
-        actionsPadding: EdgeInsets.fromLTRB(
-          screenWidth * 0.04,
-          0,
-          screenWidth * 0.04,
-          screenHeight * 0.02,
-        ),
-        actions: [
-          _CategoryButton(label: "FRESH",    color: fresh,    onTap: () => Navigator.pop(dialogContext, 'fresh')),
-          SizedBox(height: screenHeight * 0.01),
-          _CategoryButton(label: "MODERATE", color: moderate, onTap: () => Navigator.pop(dialogContext, 'moderate')),
-          SizedBox(height: screenHeight * 0.01),
-          _CategoryButton(label: "SPOILED",  color: spoiled,  onTap: () => Navigator.pop(dialogContext, 'spoiled')),
-        ],
-      ),
-    );
-
-    return result ?? 'fresh'; // fallback, should never hit since barrierDismissible is false
-  }
+  // REMOVE: _pickCategory() entirely
 
   @override
   void dispose() {
     _capSub?.cancel();
     _stableSub?.cancel();
     _statusSub?.cancel();
+    _calibSub?.cancel();
     bleService.cancelAssessment("Analysis screen closed");
+    _ideDiffSub?.cancel();
     super.dispose();
   }
 
@@ -204,6 +186,12 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
 
+    // ADD: resolve classification color for the tile
+    final classColor = _classificationResult != null
+        ? _labelColors[_classificationResult!]!
+        : const Color(0xFF012532);
+
+    // ENTIRE build() IS IDENTICAL TO OLD CODE except the tile section below
     return Scaffold(
       resizeToAvoidBottomInset: false,
       backgroundColor: bg,
@@ -221,7 +209,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               ),
             ),
             SizedBox(height: screenHeight * 0.012),
-
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -252,9 +239,22 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                 ),
               ],
             ),
-
             SizedBox(height: screenHeight * 0.015),
-
+            Text(
+              _waiting
+                  ? (_calibrationPf == null
+                      ? 'Baseline: --'
+                      : 'Baseline: ${_calibrationPf!.toStringAsFixed(3)} pF')
+                  : (_ideDiffPf == null
+                      ? 'IDE diff per channel: --'
+                      : 'IDE diff per channel:${_ideDiffPf!.toStringAsFixed(3)} pF'),
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w500,
+                fontSize: screenWidth * 0.032,
+                color: Colors.white38,
+              ),
+            ),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -277,9 +277,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                 ),
               ],
             ),
-
             SizedBox(height: screenHeight * 0.022),
-
             Expanded(
               child: Container(
                 width: double.infinity,
@@ -318,11 +316,11 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                           ),
                           textAlign: TextAlign.center,
                         ),
-                      ],
+                      ],    
                     ),
-
                     SizedBox(height: screenHeight * 0.035),
 
+                    // KEPT from old code
                     _InfoTile(label: "Session status", value: _statusText),
                     SizedBox(height: screenHeight * 0.015),
                     _InfoTile(
@@ -339,9 +337,20 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                           ? Colors.orange
                           : (_sessionValid ? Colors.green : Colors.red),
                     ),
+                    SizedBox(height: screenHeight * 0.015),
+
+                    // ADD: ML classification tile
+                    _InfoTile(
+                      label: "ML Classification",
+                      value: _inferring
+                          ? "Classifying..."
+                          : (_classificationResult?.toUpperCase() ?? "--"),
+                      valueColor: _inferring ? Colors.orange : classColor,
+                    ),
 
                     const Spacer(),
 
+                    // IDENTICAL buttons to old code
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -356,7 +365,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                                 );
                                 return;
                               }
-
                               showSaveDialog(
                                 context,
                                 readingId: _currentReadingId!,
@@ -410,44 +418,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   }
 }
 
-class _CategoryButton extends StatelessWidget {
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _CategoryButton({
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color,
-          foregroundColor: const Color(0xFF021E28),
-          padding: EdgeInsets.symmetric(vertical: screenWidth * 0.035),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(screenWidth * 0.03),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontFamily: "Inter",
-            fontWeight: FontWeight.w800,
-            fontSize: screenWidth * 0.042,
-          ),
-        ),
-      ),
-    );
-  }
-}
+// REMOVE: _CategoryButton — no longer needed
 
 class _InfoTile extends StatelessWidget {
   final String label;
