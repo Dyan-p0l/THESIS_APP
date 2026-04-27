@@ -44,7 +44,11 @@ class BleService {
   final Guid serviceUuid = Guid("6a6e2d3b-2c5f-4d3a-9b41-2c8a9c0a9b10");
   final Guid packetUuid = Guid("6a6e2d3b-2c5f-4d3a-9b41-2c8a9c0a9b11");
   final Guid cmdUuid = Guid("6a6e2d3b-2c5f-4d3a-9b41-2c8a9c0a9b12");
-  final String targetDeviceName = "FDC1004_IDE";
+  static const int _manufacturerId =
+      0x4B50; // matches BLE_MANUFACTURER_ID in firmware
+
+  // Optional: read the firmware sig byte if you want version checks later
+  static const int _firmwareSig = 0x01;
 
   // Packet flags — single-IDE layout
   // Bit 0 : sensor reading is stable
@@ -260,10 +264,9 @@ class BleService {
       for (final r in results) {
         final advName = r.advertisementData.advName;
         final devName = r.device.platformName;
-        final matchesName =
-            advName == targetDeviceName || devName == targetDeviceName;
-
-        if (!matchesName) continue;
+        final mfrData = r.advertisementData.manufacturerData;
+        final bool isOurDevice = mfrData.containsKey(_manufacturerId);
+        if (!isOurDevice) continue;
 
         _statusController.add("Device found. Connecting...");
 
@@ -283,6 +286,16 @@ class BleService {
         _scheduleRetry("scan stopped without connection");
       }
     });
+  }
+
+  static bool isOurDevice(ScanResult r) =>
+      r.advertisementData.manufacturerData.containsKey(_manufacturerId);
+
+  // Optional: read firmware version from the payload
+  static int? firmwareVersion(ScanResult r) {
+    final payload = r.advertisementData.manufacturerData[_manufacturerId];
+    if (payload == null || payload.isEmpty) return null;
+    return payload[0]; // first byte after the 2-byte ID is BLE_FIRMWARE_SIG
   }
 
   Future<void> _connect(BluetoothDevice device) async {
@@ -333,6 +346,23 @@ class BleService {
     } finally {
       _isConnecting = false;
     }
+  }
+
+  Future<void> connectToDevice(BluetoothDevice device) async {
+    if (_isConnecting) return;
+
+    _statusController.add("Connecting to selected device...");
+
+    // Stop any ongoing scan
+    try {
+      await FlutterBluePlus.stopScan();
+    } catch (_) {}
+
+    // Clean old connection
+    await disconnect();
+
+    // Connect using the SAME internal pipeline
+    await _connect(device);
   }
 
   Future<void> _discoverServices() async {
