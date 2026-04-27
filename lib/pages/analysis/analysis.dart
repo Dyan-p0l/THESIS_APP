@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/ble_service.dart';
-import '../../services/ort_service.dart';          // ADD
+import '../../services/ort_service.dart'; // ADD
 import 'save_reading/savedialog.dart';
 import '../../db/dbhelper.dart';
 import '../../models/readings.dart';
@@ -41,9 +41,9 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
 
   static const _labelMap = {0: 'fresh', 1: 'moderate', 2: 'spoiled'};
   static const _labelColors = {
-    'fresh':    Color(0xFF56DFB1),
+    'fresh': Color(0xFF56DFB1),
     'moderate': Color(0xFFFFAA00),
-    'spoiled':  Color(0xFFFF5252),
+    'spoiled': Color(0xFFFF5252),
   };
 
   @override
@@ -78,7 +78,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       if (!mounted) return;
       setState(() => _ideDiffPf = value);
     });
-
   }
 
   Future<void> _initAndBegin() async {
@@ -105,8 +104,10 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       _currentReadingId = null;
       _statusText = "Ready. Press the device button to start measuring.";
       _classificationResult = null; // ADD: reset ML result
-      _inferring = false;           // ADD: reset inferring flag
+      _inferring = false; // ADD: reset inferring flag
     });
+
+    await bleService.sendClassification(BleService.cmdClear);
 
     try {
       final result = await bleService.startAssessment(
@@ -136,7 +137,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
           _classificationResult = category;
           _inferring = false;
         });
-
+        await bleService.sendClassification(labelIndex);
         // IDENTICAL DB insert to old code, just uses inferred category
         _currentReadingId = await DBhelper.instance.insertReading(
           Reading(
@@ -147,7 +148,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
           ),
         );
       }
-
     } on TimeoutException {
       if (!mounted) return;
       setState(() {
@@ -243,11 +243,11 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             Text(
               _waiting
                   ? (_calibrationPf == null
-                      ? 'Baseline: --'
-                      : 'Baseline: ${_calibrationPf!.toStringAsFixed(3)} pF')
+                        ? 'Baseline: --'
+                        : 'Baseline: ${_calibrationPf!.toStringAsFixed(3)} pF')
                   : (_ideDiffPf == null
-                      ? 'IDE diff per channel: --'
-                      : 'IDE diff per channel:${_ideDiffPf!.toStringAsFixed(3)} pF'),
+                        ? 'IDE diff per channel: --'
+                        : 'IDE diff per channel:${_ideDiffPf!.toStringAsFixed(3)} pF'),
               style: TextStyle(
                 fontFamily: 'Inter',
                 fontWeight: FontWeight.w500,
@@ -316,7 +316,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                           ),
                           textAlign: TextAlign.center,
                         ),
-                      ],    
+                      ],
                     ),
                     SizedBox(height: screenHeight * 0.035),
 
@@ -359,9 +359,13 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                           height: screenHeight * 0.08,
                           child: TextButton(
                             onPressed: () {
-                              if (!_sessionValid || _capacitancePf == null || _currentReadingId == null) {
+                              if (!_sessionValid ||
+                                  _capacitancePf == null ||
+                                  _currentReadingId == null) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('No valid reading to save')),
+                                  const SnackBar(
+                                    content: Text('No valid reading to save'),
+                                  ),
                                 );
                                 return;
                               }
@@ -376,7 +380,9 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                               foregroundColor: const Color(0XFF40E0D0),
                               backgroundColor: const Color(0XFF012532),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(screenWidth * 0.05),
+                                borderRadius: BorderRadius.circular(
+                                  screenWidth * 0.05,
+                                ),
                               ),
                             ),
                             child: Text(
@@ -396,7 +402,9 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                               backgroundColor: const Color(0XFF40E0D0),
                               disabledBackgroundColor: Colors.grey.shade300,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(screenWidth * 0.05),
+                                borderRadius: BorderRadius.circular(
+                                  screenWidth * 0.05,
+                                ),
                               ),
                             ),
                             child: Text(

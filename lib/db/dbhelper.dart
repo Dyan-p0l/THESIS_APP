@@ -175,6 +175,55 @@ class DBhelper {
     );
   }
 
+
+  // ── AUTO DELETE — configurable retention window ───────────────────────────
+ 
+  /// Deletes unsaved readings older than [retentionDays] days.
+  /// Default is 2 days to match the original hard-coded behaviour.
+  Future<void> deleteOldUnsavedReadings({int retentionDays = 2}) async {
+    final db = await database;
+ 
+    final cutoff = DateTime.now()
+        .subtract(Duration(days: retentionDays))
+        .toIso8601String();
+ 
+    await db.delete(
+      'readings',
+      where: 'carried_out_at < ? AND is_saved = 0',
+      whereArgs: [cutoff],
+    );
+  }
+ 
+  /// Persists the user's chosen retention setting so it survives restarts.
+  /// Uses a lightweight key-value table; create it once in _createDB:
+  ///
+  ///   await db.execute('''
+  ///     CREATE TABLE IF NOT EXISTS settings (
+  ///       key   TEXT PRIMARY KEY,
+  ///       value TEXT NOT NULL
+  ///     )
+  ///   ''');
+  Future<void> setUnsavedReadingsRetentionDays(int days) async {
+    final db = await database;
+    await db.insert(
+      'settings',
+      {'key': 'unsaved_retention_days', 'value': days.toString()},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+ 
+  /// Reads back the persisted retention setting (defaults to 2 if never set).
+  Future<int> getUnsavedReadingsRetentionDays() async {
+    final db = await database;
+    final result = await db.query(
+      'settings',
+      where: 'key = ?',
+      whereArgs: ['unsaved_retention_days'],
+    );
+    if (result.isEmpty) return 2;
+    return int.tryParse(result.first['value'] as String) ?? 2;
+  }
+
   // DELETE — single reading
   Future<int> deleteReading(int id) async {
     final db = await database;
@@ -188,21 +237,6 @@ class DBhelper {
   // ───────────────────────────────────────────────────────────────────────────
   // AUTO DELETE — History cleanup
   // ───────────────────────────────────────────────────────────────────────────
-
-  // Deletes unsaved readings older than 2 days
-  Future<void> deleteOldUnsavedReadings() async {
-    final db = await database;
-
-    final twoDaysAgo = DateTime.now()
-        .subtract(const Duration(days: 2))
-        .toIso8601String();
-
-    await db.delete(
-      'readings',
-      where: 'carried_out_at < ? AND is_saved = 0',
-      whereArgs: [twoDaysAgo],
-    );
-  }
 
   // ───────────────────────────────────────────────────────────────────────────
   // CLOSE

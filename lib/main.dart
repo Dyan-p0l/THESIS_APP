@@ -7,6 +7,9 @@ import 'package:thesis_app/pages/savedsamplereading/saved_samples.dart';
 import 'package:thesis_app/pages/savedsamplereading/sample_readings.dart';
 import 'package:thesis_app/pages/savedsamplereading/viewgraph.dart';
 import 'package:thesis_app/services/ble_service.dart';
+import 'package:thesis_app/pages/settings/settings.dart';
+import 'package:thesis_app/pages/settings/settings_ml_models.dart';
+import 'package:thesis_app/pages/settings/settings_data_retention.dart';
 
 void main() {
   // Ensure Flutter bindings are ready before any app-level BLE work starts.
@@ -58,12 +61,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         fontFamily: 'Inter',
       ),
-      home: const OnboardingScreen(),
+      home: const SettingsDataRetentionPage(),
       routes: {
         '/onboarding': (context) => const OnboardingScreen(),
         '/homepage': (context) => const ConnectivityScreen(),
         '/analysis': (context) => const AnalysisScreen(),
         '/history': (context) => const HistoryPage(),
+        '/settings': (context) => const SettingsPage(),
+        '/settings_ml_models': (context) => const ModelPerformanceScreen(),
+        '/settings_data_retention': (context) => const SettingsDataRetentionPage(),
         '/saved_samples': (context) => const SavedSamplesScreen(),
         '/sample_readings': (context) {
           final args =

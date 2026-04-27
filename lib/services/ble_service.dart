@@ -43,6 +43,7 @@ class BleService {
 
   final Guid serviceUuid = Guid("6a6e2d3b-2c5f-4d3a-9b41-2c8a9c0a9b10");
   final Guid packetUuid = Guid("6a6e2d3b-2c5f-4d3a-9b41-2c8a9c0a9b11");
+  final Guid cmdUuid = Guid("6a6e2d3b-2c5f-4d3a-9b41-2c8a9c0a9b12");
   final String targetDeviceName = "FDC1004_IDE";
 
   // Packet flags — single-IDE layout
@@ -63,6 +64,11 @@ class BleService {
   static const Duration _scanTimeout = Duration(seconds: 12);
   static const Duration _retryDelay = Duration(seconds: 2);
 
+  static const int cmdFresh = 0;
+  static const int cmdModerate = 1;
+  static const int cmdSpoiled = 2;
+  static const int cmdClear = 0xFF;
+
   // Packet layout:
   //
   //   Offset  Size  Field
@@ -74,6 +80,7 @@ class BleService {
 
   BluetoothDevice? _device;
   BluetoothCharacteristic? _packetChar;
+  BluetoothCharacteristic? _cmdChar;
 
   StreamSubscription<List<ScanResult>>? _scanSub;
   StreamSubscription<BluetoothConnectionState>? _connSub;
@@ -337,10 +344,8 @@ class BleService {
     for (final service in services) {
       if (service.uuid != serviceUuid) continue;
       for (final c in service.characteristics) {
-        if (c.uuid == packetUuid) {
-          _packetChar = c;
-          break;
-        }
+        if (c.uuid == packetUuid) _packetChar = c;
+        if (c.uuid == cmdUuid) _cmdChar = c;
       }
     }
 
@@ -554,6 +559,20 @@ class BleService {
     } catch (_) {}
   }
 
+  /// Sends a classification label (0=fresh, 1=moderate, 2=spoiled, 0xFF=clear)
+  /// to the ESP32 so it can light the correct indicator LED.
+  Future<void> sendClassification(int label) async {
+    if (!isConnected || _cmdChar == null) return;
+    try {
+      await _cmdChar!.write(
+        [label & 0xFF],
+        withoutResponse: true, // matches PROPERTY_WRITE_NR on firmware side
+      );
+    } catch (e) {
+      print('[BLE] sendClassification failed: $e');
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Connection cleanup helpers
   // ---------------------------------------------------------------------------
@@ -565,6 +584,7 @@ class BleService {
     _connSub = null;
     _rssiTimer?.cancel();
     _packetChar = null;
+    _cmdChar = null;
     _connected = false;
 
     try {
@@ -588,6 +608,7 @@ class BleService {
     _rssiTimer?.cancel();
     _rssiTimer = null;
     _packetChar = null;
+    _cmdChar = null;
     _device = null;
     _connected = false;
     _isConnecting = false;
