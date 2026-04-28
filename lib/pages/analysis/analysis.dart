@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/ble_service.dart';
-import '../../services/ort_service.dart'; // ADD
+import '../../services/ort_service.dart';
+import '../../services/tflite_service.dart';
 import 'save_reading/savedialog.dart';
 import '../../db/dbhelper.dart';
 import '../../models/readings.dart';
-// REMOVE: import 'dart:math';                      // no longer needed
+
+// Import the model selection service
+import '../../services/mode_selection_service.dart'; // adjust path as needed
 
 class AnalysisScreen extends StatefulWidget {
   const AnalysisScreen({super.key});
@@ -23,8 +26,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   StreamSubscription<double>? _calibSub;
   StreamSubscription<double>? _ideDiffSub;
 
-  // REMOVE: _randomCategory() — no longer needed
-
   double? _capacitancePf;
   bool _stableNow = false;
   bool _waiting = false;
@@ -35,9 +36,13 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   double? _calibrationPf;
   double? _ideDiffPf;
 
-  // ADD: ML state
+  // ML state
   String? _classificationResult;
   bool _inferring = false;
+
+  // ── NEW: active model entry, loaded from SharedPreferences ─────────────────
+  ModelEntry? _activeModel;
+  String _activeModelLabel = ''; // shown in the UI
 
   static const _labelMap = {0: 'fresh', 1: 'moderate', 2: 'spoiled'};
   static const _labelColors = {
@@ -49,11 +54,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   @override
   void initState() {
     super.initState();
-    _initAndBegin();
-
     _calibrationPf = bleService.latestCalibrationPf;
 
-    // ALL STREAM SUBSCRIPTIONS IDENTICAL TO OLD CODE
     _capSub = bleService.capacitanceStream.listen((value) {
       if (!mounted) return;
       setState(() => _capacitancePf = value);
@@ -78,15 +80,35 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       if (!mounted) return;
       setState(() => _ideDiffPf = value);
     });
+
+    _initAndBegin();
   }
 
+  // ── UPDATED: loads model selection before initialising the engine ───────────
   Future<void> _initAndBegin() async {
-    await OrtService.init();
+    // 1. Read persisted selection
+    final entry = await ModelSelectionService.loadSelectedEntry();
+    if (!mounted) return;
+
+    setState(() {
+      _activeModel = entry;
+      final runtimeLabel =
+          entry.runtime == ModelRuntime.tflite ? 'TFLite' : 'ONNX';
+      _activeModelLabel = '${entry.name} ($runtimeLabel)';
+    });
+
+    // 2. Initialise the correct inference engine with the chosen asset path
+    if (entry.runtime == ModelRuntime.tflite) {
+      await TFLiteService.init(assetPath: entry.assetPath);
+    } else {
+      await OrtService.init(assetPath: entry.assetPath);
+    }
+
+    // 3. Start the BLE assessment as usual
     await _beginAssessment();
   }
 
   Future<void> _beginAssessment() async {
-    // IDENTICAL to old code up to the isConnected check
     if (!bleService.isConnected) {
       setState(() {
         _waiting = false;
@@ -103,8 +125,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       _stableSampleCount = 0;
       _currentReadingId = null;
       _statusText = "Ready. Press the device button to start measuring.";
-      _classificationResult = null; // ADD: reset ML result
-      _inferring = false; // ADD: reset inferring flag
+      _classificationResult = null;
+      _inferring = false;
     });
 
     await bleService.sendClassification(BleService.cmdClear);
@@ -115,7 +137,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       );
 
       if (!mounted) return;
-      // IDENTICAL setState to old code
       setState(() {
         _waiting = false;
         _sessionValid = result.sessionValid;
@@ -127,9 +148,17 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       });
 
       if (result.sessionValid && result.finalPf != null) {
-        // REPLACE: _pickCategory() → OrtService.classify()
         setState(() => _inferring = true);
-        final labelIndex = await OrtService.classify(result.finalPf!);
+
+        // ── UPDATED: route to TFLite or ONNX based on active model ────────────
+        final int labelIndex;
+        final entry = _activeModel;
+        if (entry != null && entry.runtime == ModelRuntime.tflite) {
+          labelIndex = await TFLiteService.classify(result.finalPf!);
+        } else {
+          labelIndex = await OrtService.classify(result.finalPf!);
+        }
+
         final category = _labelMap[labelIndex] ?? 'fresh';
 
         if (!mounted) return;
@@ -137,8 +166,9 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
           _classificationResult = category;
           _inferring = false;
         });
+
         await bleService.sendClassification(labelIndex);
-        // IDENTICAL DB insert to old code, just uses inferred category
+
         _currentReadingId = await DBhelper.instance.insertReading(
           Reading(
             value: result.finalPf!,
@@ -165,8 +195,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     }
   }
 
-  // REMOVE: _pickCategory() entirely
-
   @override
   void dispose() {
     _capSub?.cancel();
@@ -186,12 +214,10 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
 
-    // ADD: resolve classification color for the tile
     final classColor = _classificationResult != null
         ? _labelColors[_classificationResult!]!
         : const Color(0xFF012532);
 
-    // ENTIRE build() IS IDENTICAL TO OLD CODE except the tile section below
     return Scaffold(
       resizeToAvoidBottomInset: false,
       backgroundColor: bg,
@@ -243,11 +269,11 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             Text(
               _waiting
                   ? (_calibrationPf == null
-                        ? 'Baseline: --'
-                        : 'Baseline: ${_calibrationPf!.toStringAsFixed(3)} pF')
+                      ? 'Baseline: --'
+                      : 'Baseline: ${_calibrationPf!.toStringAsFixed(3)} pF')
                   : (_ideDiffPf == null
-                        ? 'IDE diff per channel: --'
-                        : 'IDE diff per channel:${_ideDiffPf!.toStringAsFixed(3)} pF'),
+                      ? 'IDE diff per channel: --'
+                      : 'IDE diff per channel: ${_ideDiffPf!.toStringAsFixed(3)} pF'),
               style: TextStyle(
                 fontFamily: 'Inter',
                 fontWeight: FontWeight.w500,
@@ -320,7 +346,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                     ),
                     SizedBox(height: screenHeight * 0.035),
 
-                    // KEPT from old code
                     _InfoTile(label: "Session status", value: _statusText),
                     SizedBox(height: screenHeight * 0.015),
                     _InfoTile(
@@ -339,7 +364,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                     ),
                     SizedBox(height: screenHeight * 0.015),
 
-                    // ADD: ML classification tile
+                    // ML classification tile
                     _InfoTile(
                       label: "ML Classification",
                       value: _inferring
@@ -347,10 +372,17 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                           : (_classificationResult?.toUpperCase() ?? "--"),
                       valueColor: _inferring ? Colors.orange : classColor,
                     ),
+                    SizedBox(height: screenHeight * 0.015),
+
+                    // ── NEW: active model tile ─────────────────────────────────
+                    _InfoTile(
+                      label: "Active Model",
+                      value: _activeModelLabel.isEmpty ? '--' : _activeModelLabel,
+                      valueColor: const Color(0xFF42A5F5),
+                    ),
 
                     const Spacer(),
 
-                    // IDENTICAL buttons to old code
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -425,8 +457,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     );
   }
 }
-
-// REMOVE: _CategoryButton — no longer needed
 
 class _InfoTile extends StatelessWidget {
   final String label;

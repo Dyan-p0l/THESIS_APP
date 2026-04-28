@@ -59,48 +59,48 @@ class _SettingsItem {
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
-  static const List<_SettingsItem> _items = [
-    _SettingsItem(
-      icon: FontAwesomeIcons.hexagonNodes,
-      iconColor: Color(0xFFF5A623),
-      label: 'Model and Performance',
-      onTap: _noop,
-      isFaIcon: true,
-    ),
-    _SettingsItem(
-      icon: FontAwesomeIcons.database,
-      iconColor: Color(0xFF4DD9C0),
-      label: 'Data Retention',
-      onTap: _noop,
-      isFaIcon: true,
-    ),
-    _SettingsItem(
-      icon: FontAwesomeIcons.bluetooth,
-      iconColor: Color(0xFF4DD9C0),
-      label: 'Connectivity',
-      onTap: _noop,
-      isFaIcon: true,
-    ),
-    _SettingsItem(
-      icon: FontAwesomeIcons.display,
-      iconColor: Color(0xFFE05555),
-      label: 'Display',
-      onTap: _noop,
-      isFaIcon: true,
-    ),
-    _SettingsItem(
-      icon: FontAwesomeIcons.sliders,
-      iconColor: Color(0xFFF5A623),
-      label: 'Calibration',
-      onTap: _noop,
-      isFaIcon: true,
-    ),
-  ];
-
-  static void _noop() {}
 
   @override
   Widget build(BuildContext context) {
+
+    final items = [
+      _SettingsItem(
+        icon: FontAwesomeIcons.hexagonNodes,
+        iconColor: Color(0xFFF5A623),
+        label: 'Model and Performance',
+        onTap: () => Navigator.pushNamed(context, '/settings_ml_models'),
+        isFaIcon: true,
+      ),
+      _SettingsItem(
+        icon: FontAwesomeIcons.database,
+        iconColor: Color(0xFF4DD9C0),
+        label: 'Data Retention',
+        onTap: () => Navigator.pushNamed(context, '/settings_data_retention'),
+        isFaIcon: true,
+      ),
+      _SettingsItem(
+        icon: FontAwesomeIcons.bluetooth,
+        iconColor: Color(0xFF4DD9C0),
+        label: 'Connectivity',
+        onTap: () => Navigator.pushNamed(context, '/settings_connectivity'),
+        isFaIcon: true,
+      ),
+      _SettingsItem(
+        icon: FontAwesomeIcons.display,
+        iconColor: Color(0xFFE05555),
+        label: 'Display',
+        onTap: () => Navigator.pushNamed(context, '/settings_display'),
+        isFaIcon: true,
+      ),
+      _SettingsItem(
+        icon: FontAwesomeIcons.sliders,
+        iconColor: Color(0xFFF5A623),
+        label: 'Calibration',
+        onTap: () => Navigator.pushNamed(context, '/settings_calibration'),
+        isFaIcon: true,
+      ),
+    ];
+
     final s = _Scale.of(context);
 
     return Scaffold(
@@ -147,10 +147,10 @@ class SettingsPage extends StatelessWidget {
               // ── Tiles ──────────────────────────────────────────────────
               Expanded(
                 child: ListView.separated(
-                  itemCount: _items.length,
+                  itemCount: items.length,
                   separatorBuilder: (_, __) => SizedBox(height: s.w(14)),
                   itemBuilder: (context, index) =>
-                      _SettingsTile(item: _items[index]),
+                      _SettingsTile(item: items[index]),
                 ),
               ),
             ],

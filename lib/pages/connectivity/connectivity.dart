@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../services/ble_service.dart';
+import '../connectivity/bluetooth_scan.dart';
 
 class ConnectivityScreen extends StatefulWidget {
   const ConnectivityScreen({super.key});
@@ -74,7 +75,56 @@ class _ConnectivityScreenState extends State<ConnectivityScreen> {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      SizedBox(height: screenHeight * 0.04),
+                      // ── Top bar: Bluetooth (left) + Settings (right) ──
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // Bluetooth button
+                          Container(
+                            width: screenWidth * 0.11,
+                            height: screenWidth * 0.11,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.35),
+                                width: 1.5,
+                              ),
+                            ),
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              onPressed: () {
+                                // TODO: open Bluetooth settings / scan dialog
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const BluetoothScanScreen(),
+                                  ),
+                                );
+                              },
+                              icon: Icon(
+                                Icons.bluetooth,
+                                color: Colors.white,
+                                size: screenWidth * 0.055,
+                              ),
+                            ),
+                          ),
+
+                          // Settings button
+                          IconButton(
+                            onPressed: () {
+                              Navigator.pushNamed(context, '/settings');
+                            },
+                            icon: Icon(
+                              Icons.settings,
+                              color: Colors.white,
+                              size: screenWidth * 0.065,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      SizedBox(height: screenHeight * 0.018),
+
                       Text(
                         "Connectivity Status",
                         style: TextStyle(
@@ -140,49 +190,54 @@ class _ConnectivityScreenState extends State<ConnectivityScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          TextButton.icon(
-                            onPressed: () {
-                              Navigator.pushNamed(context, '/history');
-                            },
-                            icon: Icon(
-                              Icons.history,
-                              color: Colors.white,
-                              size: screenWidth * 0.055,
-                            ),
-                            label: Text(
-                              "VIEW HISTORY",
-                              style: TextStyle(
-                                fontFamily: "Inter",
-                                fontSize: screenWidth * 0.036,
-                                fontWeight: FontWeight.w700,
+                          Flexible(
+                            child: TextButton.icon(
+                              onPressed: () {
+                                Navigator.pushNamed(context, '/history');
+                              },
+                              icon: Icon(
+                                Icons.history,
                                 color: Colors.white,
-                                letterSpacing: 0.5,
+                                size: screenWidth * 0.055,
+                              ),
+                              label: Text(
+                                "VIEW HISTORY",
+                                style: TextStyle(
+                                  fontFamily: "Inter",
+                                  fontSize: screenWidth * 0.030,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
                               ),
                             ),
                           ),
 
-                          SizedBox(width: screenWidth * 0.003),
-
-                          TextButton.icon(
-                            onPressed: () {
-                              Navigator.pushNamed(context, '/saved_samples');
-                            },
-                            icon: Icon(
-                              Icons.folder_open_rounded,
-                              color: Colors.white,
-                              size: screenWidth * 0.055,
-                            ),
-                            label: Text(
-                              "VIEW SAMPLES",
-                              style: TextStyle(
-                                fontFamily: "Inter",
-                                fontSize: screenWidth * 0.036,
-                                fontWeight: FontWeight.w700,
+                          SizedBox(width: screenWidth * 0.06),
+                          
+                          Flexible(
+                            child: TextButton.icon(
+                              onPressed: () {
+                                Navigator.pushNamed(context, '/saved_samples');
+                              },
+                              icon: Icon(
+                                Icons.folder_open_rounded,
                                 color: Colors.white,
-                                letterSpacing: 0.5,
+                                size: screenWidth * 0.055,
+                              ),
+                              label: Text(
+                                "VIEW SAMPLES",
+                                style: TextStyle(
+                                  fontFamily: "Inter",
+                                  fontSize: screenWidth * 0.030,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
                               ),
                             ),
-                          ),
+                          )
+                          
                         ],
                       ),
 

@@ -2,6 +2,25 @@ import 'package:flutter/material.dart';
 import '../../db/dbhelper.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+// ─── Responsive scale helper ──────────────────────────────────────────────────
+// Base design width: 390px (iPhone 14).
+// Factor = original px / 390. All fonts, icons, and key sizes derived here.
+class _F {
+  static double s(BuildContext ctx, double factor) =>
+      MediaQuery.of(ctx).size.width * factor;
+
+  static double pageTitle(BuildContext ctx)    => s(ctx, 0.062); // ~24px @ 390 (was 22–26 isNarrow branch)
+  static double sectionLabel(BuildContext ctx) => s(ctx, 0.038); // ~15px
+  static double infoText(BuildContext ctx)     => s(ctx, 0.037); // ~14.5px
+  static double accentLabel(BuildContext ctx)  => s(ctx, 0.036); // ~14px
+  static double linkText(BuildContext ctx)     => s(ctx, 0.035); // ~13.5px
+  static double backBtn(BuildContext ctx)      => s(ctx, 0.041); // ~16px
+  static double dayBtn(BuildContext ctx)       => s(ctx, 0.036); // ~14px
+  static double headerIcon(BuildContext ctx)   => s(ctx, 0.097); // ~38px (mid of 34–44 range)
+  static double infoIcon(BuildContext ctx)     => s(ctx, 0.046); // ~18px
+  static double linkIcon(BuildContext ctx)     => s(ctx, 0.041); // ~16px
+}
+
 class SettingsDataRetentionPage extends StatefulWidget {
   const SettingsDataRetentionPage({super.key});
 
@@ -12,31 +31,27 @@ class SettingsDataRetentionPage extends StatefulWidget {
 
 class _SettingsDataRetentionPageState
     extends State<SettingsDataRetentionPage> {
-  // ── theme colours (matching the dark teal design) ──────────────────────────
-  static const Color _bg = Color(0xFF0D1B2A);
-  static const Color _card = Color(0xFF112233);
-  static const Color _cardBorder = Color(0xFF1E3348);
-  static const Color _accent = Color(0xFF3DD6C0); // teal
+  // ── theme colours ──────────────────────────────────────────────────────────
+  static const Color _bg          = Color(0xFF021E28);
+  static const Color _cardBorder  = Color(0xFF1E3348);
+  static const Color _accent      = Color(0xFF3DD6C0);
   static const Color _textPrimary = Colors.white;
   static const Color _textSecondary = Color(0xFF8FA8BF);
-  static const Color _selectedBtnBg = Color(0xFF2A3F52);
   static const Color _unselectedBtnBg = Color(0xFF162230);
 
   // ── state ──────────────────────────────────────────────────────────────────
-  int _selectedDays = 2; // default shown in screenshot
-  bool _isSaving = false;
+  int _selectedDays = 2;
+  bool _isSaving    = false;
 
   // ── helpers ────────────────────────────────────────────────────────────────
   Future<void> _selectDays(int days) async {
     if (_selectedDays == days || _isSaving) return;
     setState(() {
       _selectedDays = days;
-      _isSaving = true;
+      _isSaving     = true;
     });
-
     try {
       await DBhelper.instance.setUnsavedReadingsRetentionDays(days);
-      // Immediately apply: remove readings that now fall outside the new window
       await DBhelper.instance.deleteOldUnsavedReadings(retentionDays: days);
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -46,17 +61,37 @@ class _SettingsDataRetentionPageState
   // ── build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final isNarrow = size.width < 400;
+    final sw = MediaQuery.of(context).size.width;
 
     return Scaffold(
-      backgroundColor: Color(0XFF021E28),
-      appBar: _buildAppBar(context),
+      backgroundColor: _bg,
+      appBar: AppBar(
+        backgroundColor: _bg,
+        leading: GestureDetector(
+          onTap: () => Navigator.of(context).maybePop(),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(width: sw * 0.02),
+              Icon(Icons.chevron_left, color: Colors.white, size: sw * 0.072),
+              SizedBox(width: sw * 0.005),
+              Text(
+                'Back',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: _F.backBtn(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+        leadingWidth: sw * 0.26, // scales so "Back" is never clipped
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: EdgeInsets.symmetric(
-            horizontal: size.width * 0.05,
-            vertical: 24,
+            horizontal: sw * 0.05,
+            vertical: sw * 0.062,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -66,13 +101,17 @@ class _SettingsDataRetentionPageState
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(FontAwesomeIcons.database, color: Color(0XFF3DD6C0), size: isNarrow ? 34: 44),
-                    const SizedBox(width: 10),
+                    Icon(
+                      FontAwesomeIcons.database,
+                      color: _accent,
+                      size: _F.headerIcon(context),
+                    ),
+                    SizedBox(width: sw * 0.026),
                     Text(
                       'Data Retention',
                       style: TextStyle(
                         color: _textPrimary,
-                        fontSize: isNarrow ? 22 : 26,
+                        fontSize: _F.pageTitle(context),
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.3,
                       ),
@@ -81,54 +120,53 @@ class _SettingsDataRetentionPageState
                 ),
               ),
 
-              const SizedBox(height: 36),
+              SizedBox(height: sw * 0.092),
 
               // ── Saved Readings section ─────────────────────────────────────
-              _sectionLabel('Saved Readings'),
-              const SizedBox(height: 10),
+              _sectionLabel(context, 'Saved Readings'),
+              SizedBox(height: sw * 0.026),
               _infoCard(
                 children: [
                   _infoRow(
+                    context: context,
                     icon: Icons.info_outline_rounded,
-                    text:
-                        'Saved readings are stored permanently until deleted manually.',
+                    text: 'Saved readings are stored permanently until deleted manually.',
                   ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: sw * 0.031),
                   _linkRow(
+                    context: context,
                     label: 'Go to Samples page',
-                    onTap: () {
-                      // Navigate to Samples page
-                      // Navigator.of(context).pushNamed('/samples');
-                    },
+                    onTap: () => Navigator.of(context).pushNamed('/saved_samples'),
                   ),
                 ],
               ),
 
-              const SizedBox(height: 28),
+              SizedBox(height: sw * 0.072),
 
               // ── Unsaved Readings section ───────────────────────────────────
-              _sectionLabel('Unsaved Readings'),
-              const SizedBox(height: 10),
+              _sectionLabel(context, 'Unsaved Readings'),
+              SizedBox(height: sw * 0.026),
               _infoCard(
                 children: [
                   _infoRow(
+                    context: context,
                     icon: Icons.info_outline_rounded,
                     text:
                         'Readings which are NOT saved to any samples are temporarily '
                         'stored in the back-end for readings history visualization. '
                         'Select number of days to store readings before deletion.',
                   ),
-                  const SizedBox(height: 20),
+                  SizedBox(height: sw * 0.051),
                   Text(
                     'Keep Unsaved Readings for:',
                     style: TextStyle(
                       color: _accent,
-                      fontSize: isNarrow ? 13 : 14,
+                      fontSize: _F.accentLabel(context),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  _daySelector(isNarrow),
+                  SizedBox(height: sw * 0.036),
+                  _daySelector(context),
                 ],
               ),
             ],
@@ -140,29 +178,12 @@ class _SettingsDataRetentionPageState
 
   // ── sub-widgets ────────────────────────────────────────────────────────────
 
-  AppBar _buildAppBar(BuildContext context) {
-    return AppBar(
-      backgroundColor: Color(0XFF021E28),
-      elevation: 0,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded,
-            color: _textPrimary, size: 18),
-        onPressed: () => Navigator.of(context).pop(),
-      ),
-      title: const Text(
-        'Back',
-        style: TextStyle(color: _textPrimary, fontSize: 16),
-      ),
-      titleSpacing: 0,
-    );
-  }
-
-  Widget _sectionLabel(String text) {
+  Widget _sectionLabel(BuildContext context, String text) {
     return Text(
       text,
-      style: const TextStyle(
+      style: TextStyle(
         color: _textPrimary,
-        fontSize: 15,
+        fontSize: _F.sectionLabel(context),
         fontWeight: FontWeight.w600,
         letterSpacing: 0.2,
       ),
@@ -172,9 +193,9 @@ class _SettingsDataRetentionPageState
   Widget _infoCard({required List<Widget> children}) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(MediaQuery.of(context).size.width * 0.041),
       decoration: BoxDecoration(
-        color: Color.fromARGB(198, 2, 60, 81),
+        color: const Color.fromARGB(198, 2, 60, 81),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _cardBorder, width: 1),
       ),
@@ -185,18 +206,23 @@ class _SettingsDataRetentionPageState
     );
   }
 
-  Widget _infoRow({required IconData icon, required String text}) {
+  Widget _infoRow({
+    required BuildContext context,
+    required IconData icon,
+    required String text,
+  }) {
+    final sw = MediaQuery.of(context).size.width;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: _textSecondary, size: 18),
-        const SizedBox(width: 10),
+        Icon(icon, color: _textSecondary, size: _F.infoIcon(context)),
+        SizedBox(width: sw * 0.026),
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(
-              color: Color.fromARGB(255, 252, 252, 252),
-              fontSize: 14.5,
+            style: TextStyle(
+              color: const Color.fromARGB(255, 252, 252, 252),
+              fontSize: _F.infoText(context),
               height: 1.5,
             ),
           ),
@@ -205,20 +231,28 @@ class _SettingsDataRetentionPageState
     );
   }
 
-  Widget _linkRow({required String label, required VoidCallback onTap}) {
+  Widget _linkRow({
+    required BuildContext context,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    final sw = MediaQuery.of(context).size.width;
     return GestureDetector(
       onTap: onTap,
       child: Row(
         children: [
-          const SizedBox(width: 28), // aligns with info text
-          const Icon(Icons.subdirectory_arrow_right_rounded,
-              color: _accent, size: 16),
-          const SizedBox(width: 4),
+          SizedBox(width: sw * 0.072), // aligns with info text
+          Icon(
+            Icons.subdirectory_arrow_right_rounded,
+            color: _accent,
+            size: _F.linkIcon(context),
+          ),
+          SizedBox(width: sw * 0.01),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: _accent,
-              fontSize: 13.5,
+              fontSize: _F.linkText(context),
               decoration: TextDecoration.underline,
               decorationColor: _accent,
             ),
@@ -228,28 +262,35 @@ class _SettingsDataRetentionPageState
     );
   }
 
-  Widget _daySelector(bool isNarrow) {
+  Widget _daySelector(BuildContext context) {
+    final sw = MediaQuery.of(context).size.width;
     const options = [1, 2, 3];
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final btnWidth = (constraints.maxWidth - 16) / 3;
+        final btnWidth  = (constraints.maxWidth - sw * 0.041) / 3;
+        final btnHeight = sw * 0.128; // ~50px @ 390 (was 44–50 isNarrow branch)
 
         return Row(
           children: options.map((days) {
             final isSelected = _selectedDays == days;
             return Padding(
-              padding: EdgeInsets.only(right: days != options.last ? 8 : 0),
+              padding: EdgeInsets.only(
+                right: days != options.last ? sw * 0.02 : 0,
+              ),
               child: _DayButton(
                 label: days == 1 ? '1 day' : '$days days',
                 selected: isSelected,
                 width: btnWidth,
-                height: isNarrow ? 44 : 50,
+                height: btnHeight,
                 selectedBg: const Color.fromARGB(255, 250, 250, 250),
                 unselectedBg: _unselectedBtnBg,
                 selectedBorder: const Color.fromARGB(0, 61, 214, 191),
                 unselectedBorder: const Color.fromARGB(0, 30, 51, 72),
-                textColor: isSelected ? Color.fromARGB(255, 0, 0, 0) : _textPrimary,
+                textColor: isSelected
+                    ? const Color.fromARGB(255, 0, 0, 0)
+                    : _textPrimary,
+                fontSize: _F.dayBtn(context),
                 onTap: () => _selectDays(days),
               ),
             );
@@ -272,6 +313,7 @@ class _DayButton extends StatelessWidget {
   final Color selectedBorder;
   final Color unselectedBorder;
   final Color textColor;
+  final double fontSize; // responsive font size passed in
   final VoidCallback onTap;
 
   const _DayButton({
@@ -284,6 +326,7 @@ class _DayButton extends StatelessWidget {
     required this.selectedBorder,
     required this.unselectedBorder,
     required this.textColor,
+    required this.fontSize,
     required this.onTap,
   });
 
@@ -309,7 +352,7 @@ class _DayButton extends StatelessWidget {
           label,
           style: TextStyle(
             color: textColor,
-            fontSize: 14,
+            fontSize: fontSize,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
           ),
         ),

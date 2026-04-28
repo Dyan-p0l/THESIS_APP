@@ -21,7 +21,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
 
     <application
-        android:label="Pressko AI"
+        android:label="Pressko 2"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity
