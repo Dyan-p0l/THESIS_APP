@@ -72,6 +72,7 @@ class BleService {
   static const int cmdModerate = 1;
   static const int cmdSpoiled = 2;
   static const int cmdClear = 0xFF;
+  static const int cmdRecalibrate = 0xFE;
 
   // Packet layout:
   //
@@ -137,6 +138,15 @@ class BleService {
   final List<double> _stableIdeDiffSamples = <double>[];
   final List<double> _liveMedianWindow = <double>[];
   double? _liveEma;
+
+  Future<void> sendRecalibrate() async {
+    if (!isConnected || _cmdChar == null) return;
+    try {
+      await _cmdChar!.write([cmdRecalibrate], withoutResponse: true);
+    } catch (e) {
+      print('[BLE] sendRecalibrate failed: $e');
+    }
+  }
 
   Future<void> startAutoConnect() async {
     // Guard against duplicate scans / overlapping connect attempts.

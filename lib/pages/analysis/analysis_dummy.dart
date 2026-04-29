@@ -6,18 +6,20 @@ import '../../services/tflite_service.dart';
 import 'save_reading/savedialog.dart';
 import '../../db/dbhelper.dart';
 import '../../models/readings.dart';
+import '../../services/mode_selection_service.dart';
+import 'anim/loadinganim.dart';     
+import 'anim/rotatingcheck.dart';     
+import 'anim/freshnessmeter.dart';
 
-// Import the model selection service
-import '../../services/mode_selection_service.dart'; // adjust path as needed
-
-class AnalysisScreenDummy extends StatefulWidget {
+class AnalysisScreenDummy extends StatefulWidget {      
   const AnalysisScreenDummy({super.key});
 
   @override
   State<AnalysisScreenDummy> createState() => _AnalysisScreenDummyState();
 }
 
-class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
+class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
+    with TickerProviderStateMixin {
   final BleService bleService = BleService();
 
   StreamSubscription<double>? _capSub;
@@ -36,13 +38,27 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
   double? _calibrationPf;
   double? _ideDiffPf;
 
-  // ML state
+  bool _phase1Played = false;
+  bool _phase2Played = false;
+
   String? _classificationResult;
   bool _inferring = false;
 
-  // ── NEW: active model entry, loaded from SharedPreferences ─────────────────
   ModelEntry? _activeModel;
-  String _activeModelLabel = ''; // shown in the UI
+  String _activeModelLabel = '';
+
+  // ── Animation controllers (mirrors ResultScreen) ──────────────────────────
+  late AnimationController _ctrl1;
+  late AnimationController _ctrl2;
+  late AnimationController _ctrl3;
+
+  late Animation<double> _fade1;
+  late Animation<double> _fade2;
+  late Animation<double> _fade3;
+
+  late Animation<Offset> _slide1;
+  late Animation<Offset> _slide2;
+  late Animation<Offset> _slide3;
 
   static const _labelMap = {0: 'fresh', 1: 'moderate', 2: 'spoiled'};
   static const _labelColors = {
@@ -51,31 +67,55 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
     'spoiled': Color(0xFFFF5252),
   };
 
+  // Maps classification string to FreshnessMeter level index
+  static const _levelMap = {'fresh': 0, 'moderate': 1, 'spoiled': 2};
+
   @override
   void initState() {
     super.initState();
     _calibrationPf = bleService.latestCalibrationPf;
 
+    // ── Set up animation controllers ─────────────────────────────────────────
+    _ctrl1 = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 400));
+    _ctrl2 = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 500));
+    _ctrl3 = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 600));
+
+    _fade1 = Tween(begin: 0.0, end: 1.0).animate(_ctrl1);
+    _fade2 = Tween(begin: 0.0, end: 1.0).animate(_ctrl2);
+    _fade3 = Tween(begin: 0.0, end: 1.0).animate(_ctrl3);
+
+    _slide1 =
+        Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(_ctrl1);
+    _slide2 =
+        Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(_ctrl2);
+    _slide3 =
+        Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(_ctrl3);
+
+    // ── BLE streams ──────────────────────────────────────────────────────────
     _capSub = bleService.capacitanceStream.listen((value) {
       if (!mounted) return;
       setState(() => _capacitancePf = value);
     });
-
     _stableSub = bleService.stableStream.listen((value) {
       if (!mounted) return;
       setState(() => _stableNow = value);
-    });
 
+      if (value && !_phase1Played && _classificationResult == null) {
+        _phase2Played = true;
+        _ctrl2.forward();
+      }
+    });
     _statusSub = bleService.statusStream.listen((value) {
       if (!mounted) return;
       setState(() => _statusText = value);
     });
-
     _calibSub = bleService.calibrationStream.listen((value) {
       if (!mounted) return;
       setState(() => _calibrationPf = value);
     });
-
     _ideDiffSub = bleService.ideDiffStream.listen((value) {
       if (!mounted) return;
       setState(() => _ideDiffPf = value);
@@ -84,9 +124,7 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
     _initAndBegin();
   }
 
-  // ── UPDATED: loads model selection before initialising the engine ───────────
   Future<void> _initAndBegin() async {
-    // 1. Read persisted selection
     final entry = await ModelSelectionService.loadSelectedEntry();
     if (!mounted) return;
 
@@ -97,18 +135,22 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
       _activeModelLabel = '${entry.name} ($runtimeLabel)';
     });
 
-    // 2. Initialise the correct inference engine with the chosen asset path
     if (entry.runtime == ModelRuntime.tflite) {
       await TFLiteService.init(assetPath: entry.assetPath);
     } else {
       await OrtService.init(assetPath: entry.assetPath);
     }
 
-    // 3. Start the BLE assessment as usual
     await _beginAssessment();
   }
 
+  // ── Resets animations then starts a new assessment ────────────────────────
   Future<void> _beginAssessment() async {
+    // Reset all three controllers so the animation replays on "New Test"
+    _ctrl1.reset();
+    _ctrl2.reset();
+    _ctrl3.reset();
+
     if (!bleService.isConnected) {
       setState(() {
         _waiting = false;
@@ -127,6 +169,7 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
       _statusText = "Ready. Press the device button to start measuring.";
       _classificationResult = null;
       _inferring = false;
+      _phase1Played = false;
     });
 
     await bleService.sendClassification(BleService.cmdClear);
@@ -150,7 +193,6 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
       if (result.sessionValid && result.finalPf != null) {
         setState(() => _inferring = true);
 
-        // ── UPDATED: route to TFLite or ONNX based on active model ────────────
         final int labelIndex;
         final entry = _activeModel;
         if (entry != null && entry.runtime == ModelRuntime.tflite) {
@@ -166,6 +208,9 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
           _classificationResult = category;
           _inferring = false;
         });
+
+        // ── Kick off the step-by-step reveal animation ──────────────────────
+        _playResultAnimation();
 
         await bleService.sendClassification(labelIndex);
 
@@ -195,15 +240,52 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
     }
   }
 
+  Future<void> _playResultAnimation() async {
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (!mounted) return;
+    await _ctrl3.forward();
+  }
+
   @override
   void dispose() {
     _capSub?.cancel();
     _stableSub?.cancel();
     _statusSub?.cancel();
     _calibSub?.cancel();
-    bleService.cancelAssessment("Analysis screen closed");
     _ideDiffSub?.cancel();
+    bleService.cancelAssessment("Analysis screen closed");
+    _ctrl1.dispose();
+    _ctrl2.dispose();
+    _ctrl3.dispose();
     super.dispose();
+  }
+
+  // ── Builds an animated step row (mirrors ResultScreen.buildStep) ───────────
+  Widget _buildStep(
+      String text, AnimationController ctrl, Animation<double> fade,
+      Animation<Offset> slide) {
+    return FadeTransition(
+      opacity: fade,
+      child: SlideTransition(
+        position: slide,
+        child: Row(
+          children: [
+            AnimatedCheck(isDone: ctrl.isCompleted),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                text,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1F3A3D),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -213,6 +295,11 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
 
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
+
+    final bool showingResult = _phase2Played && !_waiting;
+
+    final int meterLevel =
+        _levelMap[_classificationResult ?? 'fresh'] ?? 0;
 
     final classColor = _classificationResult != null
         ? _labelColors[_classificationResult!]!
@@ -224,6 +311,7 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
       body: SafeArea(
         child: Column(
           children: [
+            // ── Header ──────────────────────────────────────────────────────
             SizedBox(height: screenHeight * 0.015),
             Text(
               'Capacitance Reading',
@@ -235,6 +323,8 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
               ),
             ),
             SizedBox(height: screenHeight * 0.012),
+
+            // ── Capacitance value ────────────────────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -266,7 +356,9 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
               ],
             ),
             SizedBox(height: screenHeight * 0.015),
-            Text(
+
+            // ── Baseline / IDE diff ──────────────────────────────────────────
+            Text( 
               _waiting
                   ? (_calibrationPf == null
                       ? 'Baseline: --'
@@ -281,6 +373,8 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
                 color: Colors.white38,
               ),
             ),
+
+            // ── Stable indicator ─────────────────────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -304,6 +398,8 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
               ],
             ),
             SizedBox(height: screenHeight * 0.022),
+
+            // ── White card panel ─────────────────────────────────────────────
             Expanded(
               child: Container(
                 width: double.infinity,
@@ -322,15 +418,14 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
                 ),
                 child: Column(
                   children: [
+                    // ── Hint row ───────────────────────────────────────────
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          Icons.info_outline,
-                          color: const Color(0xFF868686),
-                          size: screenWidth * 0.065,
-                        ),
+                        Icon(Icons.info_outline,
+                            color: const Color(0xFF868686),
+                            size: screenWidth * 0.065),
                         SizedBox(width: screenWidth * 0.02),
                         Text(
                           'Please ensure proper\ncontact with fish surface.',
@@ -344,45 +439,19 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
                         ),
                       ],
                     ),
-                    SizedBox(height: screenHeight * 0.035),
+                    SizedBox(height: screenHeight * 0.018),
 
-                    _InfoTile(label: "Session status", value: _statusText),
-                    SizedBox(height: screenHeight * 0.015),
-                    _InfoTile(
-                      label: "Stable samples received",
-                      value: "$_stableSampleCount",
-                    ),
-                    SizedBox(height: screenHeight * 0.015),
-                    _InfoTile(
-                      label: "Result validity",
-                      value: _waiting
-                          ? "Waiting..."
-                          : (_sessionValid ? "VALID" : "INVALID"),
-                      valueColor: _waiting
-                          ? Colors.orange
-                          : (_sessionValid ? Colors.green : Colors.red),
-                    ),
-                    SizedBox(height: screenHeight * 0.015),
-
-                    // ML classification tile
-                    _InfoTile(
-                      label: "ML Classification",
-                      value: _inferring
-                          ? "Classifying..."
-                          : (_classificationResult?.toUpperCase() ?? "--"),
-                      valueColor: _inferring ? Colors.orange : classColor,
-                    ),
-                    SizedBox(height: screenHeight * 0.015),
-
-                    // ── NEW: active model tile ─────────────────────────────────
-                    _InfoTile(
-                      label: "Active Model",
-                      value: _activeModelLabel.isEmpty ? '--' : _activeModelLabel,
-                      valueColor: const Color(0xFF42A5F5),
+                    // ── MAIN AREA: loading GIF  OR  animated result ────────
+                    Expanded(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 400),
+                        child: showingResult
+                            ? _buildAnimatedResult(meterLevel, classColor, screenHeight)
+                            : _buildLoadingArea(screenHeight),
+                      ),
                     ),
 
-                    const Spacer(),
-
+                    // ── Buttons ───────────────────────────────────────────
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -412,9 +481,8 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
                               foregroundColor: const Color(0XFF40E0D0),
                               backgroundColor: const Color(0XFF012532),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  screenWidth * 0.05,
-                                ),
+                                borderRadius:
+                                    BorderRadius.circular(screenWidth * 0.05),
                               ),
                             ),
                             child: Text(
@@ -434,9 +502,8 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
                               backgroundColor: const Color(0XFF40E0D0),
                               disabledBackgroundColor: Colors.grey.shade300,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  screenWidth * 0.05,
-                                ),
+                                borderRadius:
+                                    BorderRadius.circular(screenWidth * 0.05),
                               ),
                             ),
                             child: Text(
@@ -456,50 +523,106 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
       ),
     );
   }
-}
 
-class _InfoTile extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color? valueColor;
-
-  const _InfoTile({required this.label, required this.value, this.valueColor});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF4F7F8),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Expanded(
+  // ── Loading area: GIF + status text ───────────────────────────────────────
+  Widget _buildLoadingArea(double screenHeight) {
+    return Column(
+      key: const ValueKey('loading'),
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const LoadingAnim(),
+        SizedBox(height: screenHeight * 0.015),
+        Text(
+          _inferring ? "Classifying..." : _statusText,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontFamily: 'Inter',
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            color: Color(0xFF5E6B70),
+          ),
+        ),
+        // Show error hint when not waiting and session is invalid
+        if (!_waiting && !_inferring && !_sessionValid)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
             child: Text(
-              label,
+              _statusText,
+              textAlign: TextAlign.center,
               style: const TextStyle(
                 fontFamily: 'Inter',
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-                color: Color(0xFF5E6B70),
+                fontSize: 13,
+                color: Colors.red,
               ),
             ),
           ),
-          Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontWeight: FontWeight.w800,
-                fontSize: 14,
-                color: valueColor ?? const Color(0xFF012532),
+      ],
+    );
+  }
+
+  // ── Result area: step-by-step reveal animation ────────────────────────────
+  Widget _buildAnimatedResult(int meterLevel, Color classColor, double screenHeight) {
+    return SingleChildScrollView(
+      key: const ValueKey('result'),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Step 1 — Evaluation label
+            _buildStep(
+              "FRESHNESS EVALUATION",
+              _ctrl1,
+              _fade1,
+              _slide1,
+            ),
+            SizedBox(height: screenHeight * 0.022),
+
+            // Step 2 — Classification label
+            _buildStep(
+              "CLASSIFICATION:",
+              _ctrl2,
+              _fade2,
+              _slide2,
+            ),
+            SizedBox(height: screenHeight * 0.025),
+
+            // Step 3 — Meter + result label + active model
+            FadeTransition(
+              opacity: _fade3,
+              child: SlideTransition(
+                position: _slide3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    FreshnessMeter(level: meterLevel),
+                    SizedBox(height: screenHeight * 0.012),
+                    Text(
+                      (_classificationResult ?? '').toUpperCase(),
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 36,
+                        fontWeight: FontWeight.bold,
+                        color: classColor,
+                      ),
+                    ),
+                    SizedBox(height: screenHeight * 0.01),
+                    Text(
+                      _activeModelLabel.isEmpty
+                          ? ''
+                          : 'Model: $_activeModelLabel',
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 12,
+                        color: Color(0xFF42A5F5),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

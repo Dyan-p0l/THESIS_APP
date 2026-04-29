@@ -1,57 +1,66 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../services/ble_service.dart';
 
-// ============================================================
-// CALIBRATION DATA MODEL
-// Replace this with real data from your service layer.
-// ============================================================
-class CalibrationData {
-  /// The baseline capacitance value read from the device.
-  /// e.g. "1.6pF"
-  final String baselineCalibrationValue;
+class SettingsCalibrationScreen extends StatefulWidget {
+  const SettingsCalibrationScreen({super.key});
 
-  /// Whether a recalibration is currently in progress.
-  final bool isRecalibrating;
-
-  const CalibrationData({
-    this.baselineCalibrationValue = '',
-    this.isRecalibrating = false,
-  });
+  @override
+  State<SettingsCalibrationScreen> createState() =>
+      _SettingsCalibrationScreenState();
 }
 
-// ============================================================
-// DUMMY DATA — swap this out when your service is ready
-// ============================================================
-const CalibrationData kDummyCalibrationData = CalibrationData(
-  baselineCalibrationValue: '1.6pF',
-  isRecalibrating: false,
-);
+class _SettingsCalibrationScreenState extends State<SettingsCalibrationScreen> {
+  final BleService _ble = BleService();
 
-// ============================================================
-// SETTINGS CALIBRATION SCREEN
-// ============================================================
-class SettingsCalibrationScreen extends StatelessWidget {
-  /// Inject real CalibrationData from your service/BLoC here.
-  /// Falls back to dummy data if null.
-  final CalibrationData? data;
+  double? _baselinePf;
+  bool _isRecalibrating = false;
 
-  /// Called when the user taps RECALIBRATE.
-  /// Wire this to your calibration service when ready.
-  final VoidCallback? onRecalibrate;
+  StreamSubscription<double>? _calibSub;
 
-  const SettingsCalibrationScreen({
-    super.key,
-    this.data,
-    this.onRecalibrate,
-  });
+  @override
+  void initState() {
+    super.initState();
+    _baselinePf = _ble.latestCalibrationPf;
 
-  CalibrationData get _data => data ?? kDummyCalibrationData;
+    _calibSub = _ble.calibrationStream.listen((value) {
+      if (!mounted) return;
+      setState(() {
+        _baselinePf = value;
+        _isRecalibrating = false;
+      });
+    });
+  }
 
-  // ── Theme ────────────────────────────────────────────────
+  @override
+  void dispose() {
+    _calibSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _onRecalibrate() async {
+    if (!_ble.isConnected) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('ESP32 not connected')));
+      return;
+    }
+
+    setState(() {
+      _isRecalibrating = true;
+      _baselinePf = null;
+    });
+
+    await _ble.sendRecalibrate();
+  }
+
+  String get _baselineDisplayValue {
+    if (_isRecalibrating) return 'Recalibrating...';
+    if (_baselinePf == null) return '—';
+    return '${_baselinePf!.toStringAsFixed(3)} pF';
+  }
+
   static const Color _bgColor = Color(0xFF021E28);
-  static const Color _cardColor = Color.fromARGB(204, 2, 60, 81);
-  static const Color _accentCyan = Color(0xFF4DD9C0);
-  static const Color _accentYellow = Color(0xFFD4C44A);
-  static const Color _labelColor = Color(0xFFB0BEC5);
 
   @override
   Widget build(BuildContext context) {
@@ -63,15 +72,13 @@ class SettingsCalibrationScreen extends StatelessWidget {
       backgroundColor: _bgColor,
       appBar: _CalibrationAppBar(),
       body: SafeArea(
-        top: false, // AppBar handles top safe area
+        top: false,
         child: SingleChildScrollView(
           padding: EdgeInsets.symmetric(horizontal: hPad),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               SizedBox(height: screenHeight * 0.02),
-
-              // ── Page title ─────────────────────────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: const [
@@ -87,30 +94,17 @@ class SettingsCalibrationScreen extends StatelessWidget {
                   ),
                 ],
               ),
-
               SizedBox(height: screenHeight * 0.02),
-
-              // ── Device animation ───────────────────────
               _DeviceAnimation(size: screenHeight * 0.22),
-
               SizedBox(height: screenHeight * 0.04),
-
-              // ── Baseline value card ────────────────────
-              _BaselineValueCard(value: _data.baselineCalibrationValue),
-
+              _BaselineValueCard(value: _baselineDisplayValue),
               SizedBox(height: screenHeight * 0.03),
-
-              // ── Info card ──────────────────────────────
-              const _InfoCard(),
-
+              _InfoCard(),
               SizedBox(height: screenHeight * 0.06),
-
-              // ── Recalibrate button ─────────────────────
               _RecalibrateButton(
-                isLoading: _data.isRecalibrating,
-                onTap: onRecalibrate ?? () {},
+                isLoading: _isRecalibrating,
+                onTap: _onRecalibrate,
               ),
-
               SizedBox(height: mq.padding.bottom + 24),
             ],
           ),
@@ -159,7 +153,6 @@ class _DeviceAnimation extends StatelessWidget {
       child: Image.asset(
         'assets/images/onboardingpage/device_animation.gif',
         fit: BoxFit.contain,
-        // Fallback if asset is missing during development
         errorBuilder: (context, error, stackTrace) => Icon(
           Icons.developer_board,
           size: size * 0.6,
@@ -190,14 +183,14 @@ class _BaselineValueCard extends StatelessWidget {
           const Text(
             'BASELINE CALIBRATION VALUE: ',
             style: TextStyle(
-              color: Color.fromARGB(255, 255, 255, 255),
+              color: Colors.white,
               fontSize: 13,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.4,
             ),
           ),
           Text(
-            value.isEmpty ? '—' : value,
+            value,
             style: const TextStyle(
               color: Color(0xFF4DD9C0),
               fontSize: 13,
@@ -213,8 +206,6 @@ class _BaselineValueCard extends StatelessWidget {
 
 // ── Info Card ─────────────────────────────────────────────────
 class _InfoCard extends StatelessWidget {
-  const _InfoCard();
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -229,11 +220,7 @@ class _InfoCard extends StatelessWidget {
         children: [
           const Padding(
             padding: EdgeInsets.only(top: 2),
-            child: Icon(
-              Icons.info_outline,
-              color: Color.fromARGB(255, 255, 255, 255),
-              size: 18,
-            ),
+            child: Icon(Icons.info_outline, color: Colors.white, size: 18),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -241,7 +228,7 @@ class _InfoCard extends StatelessWidget {
               textAlign: TextAlign.justify,
               text: const TextSpan(
                 style: TextStyle(
-                  color: Color.fromARGB(255, 255, 255, 255),
+                  color: Colors.white,
                   fontSize: 13.5,
                   height: 1.55,
                 ),
@@ -257,7 +244,8 @@ class _InfoCard extends StatelessWidget {
                         'conditions. Any external influence such as ',
                   ),
                   TextSpan(
-                    text: 'fish contact, moisture, or nearby conductive objects',
+                    text:
+                        'fish contact, moisture, or nearby conductive objects',
                     style: TextStyle(color: Color(0xFF4DD9C0)),
                   ),
                   TextSpan(
@@ -280,10 +268,7 @@ class _RecalibrateButton extends StatelessWidget {
   final bool isLoading;
   final VoidCallback onTap;
 
-  const _RecalibrateButton({
-    required this.isLoading,
-    required this.onTap,
-  });
+  const _RecalibrateButton({required this.isLoading, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
