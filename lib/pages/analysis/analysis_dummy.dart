@@ -7,7 +7,6 @@ import 'save_reading/savedialog.dart';
 import '../../db/dbhelper.dart';
 import '../../models/readings.dart';
 import '../../services/mode_selection_service.dart';
-import 'anim/loadinganim.dart';     
 import 'anim/rotatingcheck.dart';     
 import 'anim/freshnessmeter.dart';
 import '../settings/settings_display.dart';
@@ -91,7 +90,7 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
     _ctrl2 = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700));
     _ctrl3 = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 600));
+        vsync: this, duration: const Duration(milliseconds: 500));
       
     _spinCtrl = AnimationController(
       vsync: this,
@@ -105,7 +104,9 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
 
     _fade1 = Tween(begin: 0.0, end: 1.0).animate(_ctrl1);
     _fade2 = Tween(begin: 0.0, end: 1.0).animate(_ctrl2);
-    _fade3 = Tween(begin: 0.0, end: 1.0).animate(_ctrl3);
+    _fade3 = Tween(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _ctrl3, curve: Curves.easeOut),
+    );
 
     _slide1 =
         Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(_ctrl1);
@@ -364,14 +365,12 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
                   externalSpinCtrl: spinCtrl,
                 ),
                 const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    text,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1F3A3D),
-                    ),
+                Text(
+                  text,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1F3A3D),
                   ),
                 ),
               ],
@@ -550,14 +549,14 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
                           style: TextStyle(
                             fontFamily: 'Inter',
                             fontWeight: FontWeight.w600,
-                            fontSize: screenWidth * 0.038,
+                            fontSize: screenWidth * 0.027,
                             color: const Color(0xFF868686),
                           ),
                           textAlign: TextAlign.center,
                         ),
                       ],
                     ),
-                    SizedBox(height: screenHeight * 0.025),
+                    SizedBox(height: screenHeight * 0.015),
 
                     Expanded(
                       child: AnimatedSwitcher(
@@ -647,14 +646,18 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const LoadingAnim(),
-          //SizedBox(height: screenHeight * 0.009),
+          Image.asset(
+            'assets/images/onboardingpage/device_animation.gif',
+            width: screenHeight * 0.32,
+            height: screenHeight * 0.32,
+          ),
+          SizedBox(height: screenHeight * 0.012),
           Text(
             _statusText,
-            style: TextStyle(
+            style: const TextStyle(
               fontFamily: 'Inter',
-              fontSize: 16,
-              color: const Color(0xFF868686),
+              fontSize: 14,
+              color: Color(0xFF868686),
             ),
             textAlign: TextAlign.center,
           ),
@@ -673,59 +676,71 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
             crossAxisAlignment: CrossAxisAlignment.center, // ← was start
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildStep(
-                "FRESHNESS EVALUATION",
-                _ctrl1, _fade1, _slide1,
-                isDone: _step1Done,
-                spinCtrl: _spinCtrl,
-              ),
-              _buildStep(
-                "CLASSIFICATION:",
-                _ctrl2, _fade2, _slide2,
-                isDone: _step2Done,
-                spinCtrl: _spinCtrl2,
-                showConnector: true,
+              IntrinsicWidth(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildStep(
+                      "FRESHNESS EVALUATION",
+                      _ctrl1, _fade1, _slide1,
+                      isDone: _step1Done,
+                      spinCtrl: _spinCtrl,
+                    ),
+                    _buildStep(
+                      "CLASSIFICATION:",
+                      _ctrl2, _fade2, _slide2,
+                      isDone: _step2Done,
+                      spinCtrl: _spinCtrl2,
+                      showConnector: true,
+                    ),
+                  ],
+                ),
               ),
               SizedBox(height: screenHeight * 0.018), // ← tighter (was 0.025)
-              FadeTransition(
-                opacity: _fade3,
-                child: SlideTransition(
-                  position: _slide3,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      FishResultImage(
-                        classification: _classificationResult ?? 'fresh',
-                        height: screenHeight * 0.13,
-                      ),
-                      SizedBox(height: screenHeight * 0.008),
-                      Transform.scale(
-                        scale: 0.7,
-                        child: FreshnessMeter(level: meterLevel),
-                      ),
-                      SizedBox(height: screenHeight * 0.008),
-                      Text(
-                        (_classificationResult ?? '').toUpperCase(),
-                        style: TextStyle(
-                          fontFamily: 'Inter',
-                          fontSize: 28,           // ← was 36
-                          fontWeight: FontWeight.bold,
-                          color: classColor,
-                        ),
-                      ),
-                      SizedBox(height: screenHeight * 0.006),
-                      Text(
-                        _activeModelLabel.isEmpty
-                            ? ''
-                            : 'Model: $_activeModelLabel',
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
-                          fontSize: 11,           // ← was 12
-                          color: Color(0xFF42A5F5),
-                        ),
-                      ),
-                    ],
+              AnimatedBuilder(
+                animation: _ctrl3,
+                builder: (context, child) => Opacity(
+                  opacity: _fade3.value,
+                  child: Transform.scale(
+                    scale: 0.85 + (0.15 * _ctrl3.value), // 0.85 → 1.0
+                    child: child,
                   ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    FishResultImage(
+                      classification: _classificationResult ?? 'fresh',
+                      height: screenHeight * 0.16,
+                    ),
+                    SizedBox(height: screenHeight * 0.008),
+                    Transform.scale(
+                      scale: 0.7,
+                      child: FreshnessMeter(level: meterLevel),
+                    ),
+                    SizedBox(height: screenHeight * 0.008),
+                    Text(
+                      (_classificationResult ?? '').toUpperCase(),
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 28,           // ← was 36
+                        fontWeight: FontWeight.bold,
+                        color: classColor,
+                      ),
+                    ),
+                    SizedBox(height: screenHeight * 0.006),
+                    Text(
+                      _activeModelLabel.isEmpty
+                          ? ''
+                          : 'Model: $_activeModelLabel',
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 11,           // ← was 12
+                        color: Color(0xFF42A5F5),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
