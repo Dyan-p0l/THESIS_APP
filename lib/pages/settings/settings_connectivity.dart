@@ -1,8 +1,61 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/ble_service.dart';
+
+// ============================================================
+// PREFS KEYS + MODEL
+// ============================================================
+class ConnectivityPrefsKeys {
+  static const autoConnectOnStartup = 'connectivity_auto_connect';
+  static const autoReconnectIfDisconnected = 'connectivity_auto_reconnect';
+}
+
+class ConnectivityPrefs {
+  final bool autoConnectOnStartup;
+  final bool autoReconnectIfDisconnected;
+
+  const ConnectivityPrefs({
+    this.autoConnectOnStartup = false,
+    this.autoReconnectIfDisconnected = false,
+  });
+
+  ConnectivityPrefs copyWith({
+    bool? autoConnectOnStartup,
+    bool? autoReconnectIfDisconnected,
+  }) => ConnectivityPrefs(
+    autoConnectOnStartup: autoConnectOnStartup ?? this.autoConnectOnStartup,
+    autoReconnectIfDisconnected:
+        autoReconnectIfDisconnected ?? this.autoReconnectIfDisconnected,
+  );
+
+  static Future<ConnectivityPrefs> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    return ConnectivityPrefs(
+      autoConnectOnStartup:
+          prefs.getBool(ConnectivityPrefsKeys.autoConnectOnStartup) ?? false,
+      autoReconnectIfDisconnected:
+          prefs.getBool(ConnectivityPrefsKeys.autoReconnectIfDisconnected) ??
+          false,
+    );
+  }
+
+  Future<void> save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(
+      ConnectivityPrefsKeys.autoConnectOnStartup,
+      autoConnectOnStartup,
+    );
+    await prefs.setBool(
+      ConnectivityPrefsKeys.autoReconnectIfDisconnected,
+      autoReconnectIfDisconnected,
+    );
+  }
+}
 
 // ============================================================
 // CONNECTIVITY DATA MODEL
-// Replace this with real data from your service/BLoC/Provider
 // ============================================================
 class ConnectivityData {
   final bool isBluetoothConnected;
@@ -24,40 +77,19 @@ class ConnectedDevice {
   final String name;
   final String uuid;
 
-  const ConnectedDevice({
-    required this.name,
-    required this.uuid,
-  });
+  const ConnectedDevice({required this.name, required this.uuid});
 }
-
-// ============================================================
-// DUMMY DATA — swap this out when your service is ready
-// ============================================================
-const ConnectivityData kDummyConnectivityData = ConnectivityData(
-  isBluetoothConnected: true,
-  autoConnectOnStartup: true,
-  autoReconnectIfDisconnected: true,
-  connectedDevice: ConnectedDevice(
-    name: 'FDC1004',
-    uuid: '6a6e2d3b-2c5f-4d3a-9b41-2c8a9c0a9b10',
-  ),
-  otherDevicesCount: 0,
-);
 
 // ============================================================
 // RESPONSIVE HELPERS
 // ============================================================
 
-/// Returns a font size scaled to screen width.
-/// [base] is the size at the reference width of 390 px (iPhone 14).
 double _rfs(BuildContext context, double base) {
   final width = MediaQuery.of(context).size.width;
-  // Clamp between 0.8× and 1.2× of base to avoid extremes.
   final scale = (width / 390.0).clamp(0.8, 1.2);
   return base * scale;
 }
 
-/// Returns a spacing/dimension value scaled to screen width.
 double _rs(BuildContext context, double base) {
   final width = MediaQuery.of(context).size.width;
   final scale = (width / 390.0).clamp(0.75, 1.3);
@@ -68,14 +100,14 @@ double _rs(BuildContext context, double base) {
 // CONNECTIVITY SCREEN
 // ============================================================
 class SettingsConnectivityScreen extends StatefulWidget {
-  final ConnectivityData? data;
+  final BleService? bleService;
   final ValueChanged<bool>? onAutoConnectToggled;
   final ValueChanged<bool>? onAutoReconnectToggled;
   final VoidCallback? onOtherDevicesTapped;
 
   const SettingsConnectivityScreen({
     super.key,
-    this.data,
+    this.bleService,
     this.onAutoConnectToggled,
     this.onAutoReconnectToggled,
     this.onOtherDevicesTapped,
@@ -88,40 +120,132 @@ class SettingsConnectivityScreen extends StatefulWidget {
 
 class _SettingsConnectivityScreenState
     extends State<SettingsConnectivityScreen> {
-  late bool _autoConnect;
-  late bool _autoReconnect;
+  bool _autoConnect = false;
+  bool _autoReconnect = false;
+  bool _loading = true;
 
-  ConnectivityData get _data => widget.data ?? kDummyConnectivityData;
+  bool _isBluetoothConnected = false;
+  ConnectedDevice? _connectedDevice;
+
+  StreamSubscription<bool>? _connectionSub;
+
+  BleService get _ble => widget.bleService ?? BleService();
+
+  String get _deviceUuid => _ble.serviceUuid.toString();
 
   @override
   void initState() {
     super.initState();
-    _autoConnect = _data.autoConnectOnStartup;
-    _autoReconnect = _data.autoReconnectIfDisconnected;
+    _initBleState();
+    _loadPrefs();
   }
 
-  @override
-  void didUpdateWidget(SettingsConnectivityScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.data != oldWidget.data && widget.data != null) {
-      _autoConnect = widget.data!.autoConnectOnStartup;
-      _autoReconnect = widget.data!.autoReconnectIfDisconnected;
+  void _initBleState() {
+    _isBluetoothConnected = _ble.isConnected;
+    if (_ble.isConnected) {
+      // FIX 1: use the real platform name captured by BleService at connect time.
+      final name = _ble.connectedDeviceName ?? 'PRESSKO 1';
+      _connectedDevice = ConnectedDevice(name: name, uuid: _deviceUuid);
+    }
+
+    _connectionSub = _ble.connectionStream.listen((connected) {
+      if (!mounted) return;
+      setState(() {
+        _isBluetoothConnected = connected;
+        if (connected) {
+          final name = _ble.connectedDeviceName ?? 'PRESSKO 1';
+          _connectedDevice = ConnectedDevice(name: name, uuid: _deviceUuid);
+        } else {
+          _connectedDevice = null;
+        }
+      });
+    });
+  }
+
+  Future<void> _loadPrefs() async {
+    final saved = await ConnectivityPrefs.load();
+    if (!mounted) return;
+    setState(() {
+      _autoConnect = saved.autoConnectOnStartup;
+      _autoReconnect = saved.autoReconnectIfDisconnected;
+      _loading = false;
+    });
+
+    // FIX 2: push the persisted auto-reconnect pref into BleService on startup
+    // so _scheduleRetry respects the user's last-known setting immediately.
+    _ble.autoReconnectEnabled = _autoReconnect;
+
+    if (_autoConnect && !_ble.isConnected) {
+      _ble.startAutoConnect();
     }
   }
 
+  Future<void> _savePrefs({
+    required bool autoConnect,
+    required bool autoReconnect,
+  }) async {
+    final prefs = ConnectivityPrefs(
+      autoConnectOnStartup: autoConnect,
+      autoReconnectIfDisconnected: autoReconnect,
+    );
+    await prefs.save();
+    widget.onAutoConnectToggled?.call(autoConnect);
+    widget.onAutoReconnectToggled?.call(autoReconnect);
+  }
+
+  Future<void> _onAutoConnectChanged(bool val) async {
+    setState(() => _autoConnect = val);
+    await _savePrefs(autoConnect: val, autoReconnect: _autoReconnect);
+
+    if (val) {
+      if (!_ble.isConnected) _ble.startAutoConnect();
+    } else {
+      // Both toggles OFF → stop retrying and disconnect.
+      if (!_autoReconnect) {
+        _ble.autoReconnectEnabled = false;
+        if (_ble.isConnected) await _ble.disconnect();
+      }
+    }
+  }
+
+  Future<void> _onAutoReconnectChanged(bool val) async {
+    setState(() => _autoReconnect = val);
+    await _savePrefs(autoConnect: _autoConnect, autoReconnect: val);
+
+    // FIX 2: tell BleService immediately so _scheduleRetry honours the toggle.
+    _ble.autoReconnectEnabled = val;
+
+    if (val && _autoConnect && !_ble.isConnected) {
+      _ble.startAutoConnect();
+    }
+  }
+
+  @override
+  void dispose() {
+    _connectionSub?.cancel();
+    super.dispose();
+  }
+
   static const Color _bgColor = Color(0xFF021E28);
-  static const Color _accentCyan = Color(0xFF4DD9C0);
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        backgroundColor: _bgColor,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final mq = MediaQuery.of(context);
-    // Horizontal padding: 5% of width, clamped between 14–28 px.
     final double hPad = (mq.size.width * 0.05).clamp(14.0, 28.0);
 
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
         backgroundColor: _bgColor,
+        elevation: 0,
+        scrolledUnderElevation: 0,
         leading: GestureDetector(
           onTap: () => Navigator.of(context).maybePop(),
           child: Row(
@@ -155,30 +279,24 @@ class _SettingsConnectivityScreenState
                 ),
                 child: Column(
                   children: [
-                    _BluetoothStatusCard(
-                        isConnected: _data.isBluetoothConnected),
+                    _BluetoothStatusCard(isConnected: _isBluetoothConnected),
                     SizedBox(height: _rs(context, 12)),
                     _ToggleCard(
                       label: 'AUTO-CONNECT UPON START-UP',
                       value: _autoConnect,
-                      onChanged: (val) {
-                        setState(() => _autoConnect = val);
-                        widget.onAutoConnectToggled?.call(val);
-                      },
+                      onChanged: _onAutoConnectChanged,
                     ),
                     SizedBox(height: _rs(context, 12)),
                     _ToggleCard(
                       label: 'AUTO-RECONNECT IF DISCONNECTED',
                       value: _autoReconnect,
-                      onChanged: (val) {
-                        setState(() => _autoReconnect = val);
-                        widget.onAutoReconnectToggled?.call(val);
-                      },
+                      onChanged: _onAutoReconnectChanged,
                     ),
                     SizedBox(height: _rs(context, 12)),
-                    if (_data.connectedDevice != null)
-                      _ConnectedDeviceCard(device: _data.connectedDevice!),
-                    SizedBox(height: _rs(context, 12)),
+                    if (_connectedDevice != null)
+                      _ConnectedDeviceCard(device: _connectedDevice!),
+                    if (_connectedDevice != null)
+                      SizedBox(height: _rs(context, 12)),
                     _OtherDevicesCard(
                       onTap: widget.onOtherDevicesTapped ?? () {},
                     ),
@@ -243,7 +361,6 @@ class _BluetoothStatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Label style shared between both text spans
     final labelStyle = TextStyle(
       color: const Color(0xFFB0BEC5),
       fontSize: _rfs(context, 12),
@@ -259,16 +376,12 @@ class _BluetoothStatusCard extends StatelessWidget {
 
     return _BaseCard(
       child: Wrap(
-        // Wrap onto the next line on very narrow screens.
         crossAxisAlignment: WrapCrossAlignment.center,
         spacing: 4,
         runSpacing: 4,
         children: [
           Text('BLUETOOTH CONNECTIVITY STATUS:', style: labelStyle),
-          Text(
-            isConnected ? 'CONNECTED' : 'DISCONNECTED',
-            style: statusStyle,
-          ),
+          Text(isConnected ? 'CONNECTED' : 'DISCONNECTED', style: statusStyle),
         ],
       ),
     );
@@ -353,25 +466,48 @@ class _ConnectedDeviceCard extends StatelessWidget {
             ),
           ),
           SizedBox(height: _rs(context, 10)),
-          // On very small screens this wraps to two rows gracefully.
-          LayoutBuilder(builder: (context, constraints) {
-            // If there's enough room keep side-by-side, else stack vertically.
-            final twoColumn = constraints.maxWidth > 280;
-            if (twoColumn) {
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: _DeviceField(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final twoColumn = constraints.maxWidth > 280;
+              if (twoColumn) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _DeviceField(
+                        label: 'DEVICE NAME:',
+                        value: device.name,
+                        labelStyle: labelStyle,
+                        valueStyle: valueStyle,
+                      ),
+                    ),
+                    SizedBox(width: _rs(context, 8)),
+                    Expanded(
+                      child: _DeviceField(
+                        label: 'UUID:',
+                        value: device.uuid,
+                        labelStyle: labelStyle,
+                        valueStyle: valueStyle.copyWith(
+                          fontSize: _rfs(context, 12),
+                          fontWeight: FontWeight.w500,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              } else {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _DeviceField(
                       label: 'DEVICE NAME:',
                       value: device.name,
                       labelStyle: labelStyle,
                       valueStyle: valueStyle,
                     ),
-                  ),
-                  SizedBox(width: _rs(context, 8)),
-                  Expanded(
-                    child: _DeviceField(
+                    SizedBox(height: _rs(context, 8)),
+                    _DeviceField(
                       label: 'UUID:',
                       value: device.uuid,
                       labelStyle: labelStyle,
@@ -381,34 +517,11 @@ class _ConnectedDeviceCard extends StatelessWidget {
                         height: 1.4,
                       ),
                     ),
-                  ),
-                ],
-              );
-            } else {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _DeviceField(
-                    label: 'DEVICE NAME:',
-                    value: device.name,
-                    labelStyle: labelStyle,
-                    valueStyle: valueStyle,
-                  ),
-                  SizedBox(height: _rs(context, 8)),
-                  _DeviceField(
-                    label: 'UUID:',
-                    value: device.uuid,
-                    labelStyle: labelStyle,
-                    valueStyle: valueStyle.copyWith(
-                      fontSize: _rfs(context, 12),
-                      fontWeight: FontWeight.w500,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              );
-            }
-          }),
+                  ],
+                );
+              }
+            },
+          ),
         ],
       ),
     );

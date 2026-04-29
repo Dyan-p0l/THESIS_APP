@@ -125,7 +125,9 @@ class BleService {
 
   bool _connected = false;
   bool get isConnected => _connected;
-
+  bool autoReconnectEnabled = true; // honoured by _scheduleRetry
+  String? _connectedDeviceName; // captured at connect time
+  String? get connectedDeviceName => _connectedDeviceName; // exposed to UI
   bool _isConnecting = false;
   bool _isArmed = false;
   bool _disposed = false;
@@ -321,6 +323,9 @@ class BleService {
       await Future.delayed(const Duration(milliseconds: 150));
       await device.connect(timeout: const Duration(seconds: 10));
 
+      _connectedDeviceName = device.platformName.isNotEmpty
+          ? device.platformName
+          : null;
       _connSub?.cancel();
       _connSub = device.connectionState.listen((state) {
         // Track the true BLE link state from the plugin instead of inferring it
@@ -652,17 +657,18 @@ class BleService {
     _device = null;
     _connected = false;
     _isConnecting = false;
+    _connectedDeviceName = null;
   }
 
   void _scheduleRetry(String reason) {
     if (_disposed || _isConnecting || isConnected) return;
+    if (!autoReconnectEnabled) return; // ← NEW: respect the UI toggle
 
-    // Use a single retry timer so scan-stop, disconnect, and connect-failure
-    // events do not stack multiple reconnect attempts on top of each other.
     _retryTimer?.cancel();
     _statusController.add("Retrying BLE connection...");
     _retryTimer = Timer(_retryDelay, () {
       if (_disposed || _isConnecting || isConnected) return;
+      if (!autoReconnectEnabled) return; // ← double-check in case it changed
       startAutoConnect();
     });
   }
