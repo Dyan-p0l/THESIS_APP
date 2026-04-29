@@ -33,9 +33,12 @@ class BleService {
   factory BleService() => _instance;
 
   BleService._internal() {
-    // If Bluetooth itself turns back on, try to reconnect automatically.
     FlutterBluePlus.adapterState.listen((state) {
-      if (state == BluetoothAdapterState.on && !_isConnecting && !isConnected) {
+      if (state == BluetoothAdapterState.on &&
+          !_isConnecting &&
+          !isConnected &&
+          autoReconnectEnabled) {
+        // ✅ respect the toggle
         startAutoConnect();
       }
     });

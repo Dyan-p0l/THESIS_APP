@@ -17,8 +17,8 @@ class ConnectivityPrefs {
   final bool autoReconnectIfDisconnected;
 
   const ConnectivityPrefs({
-    this.autoConnectOnStartup = false,
-    this.autoReconnectIfDisconnected = false,
+    this.autoConnectOnStartup = true,
+    this.autoReconnectIfDisconnected = true,
   });
 
   ConnectivityPrefs copyWith({
@@ -34,10 +34,10 @@ class ConnectivityPrefs {
     final prefs = await SharedPreferences.getInstance();
     return ConnectivityPrefs(
       autoConnectOnStartup:
-          prefs.getBool(ConnectivityPrefsKeys.autoConnectOnStartup) ?? false,
+          prefs.getBool(ConnectivityPrefsKeys.autoConnectOnStartup) ?? true,
       autoReconnectIfDisconnected:
           prefs.getBool(ConnectivityPrefsKeys.autoReconnectIfDisconnected) ??
-          false,
+          true,
     );
   }
 
