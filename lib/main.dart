@@ -10,6 +10,10 @@ import 'package:thesis_app/services/ble_service.dart';
 import 'package:thesis_app/pages/settings/settings.dart';
 import 'package:thesis_app/pages/settings/settings_ml_models.dart';
 import 'package:thesis_app/pages/settings/settings_data_retention.dart';
+import 'package:thesis_app/pages/settings/settings_connectivity.dart';
+import 'package:thesis_app/pages/settings/settings_calibration.dart';
+import 'package:thesis_app/pages/settings/settings_display.dart';
+import 'package:thesis_app/pages/connectivity/bluetooth_scan.dart';
 
 void main() {
   // Ensure Flutter bindings are ready before any app-level BLE work starts.
@@ -71,6 +75,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         '/settings_ml_models': (context) => const ModelPerformanceScreen(),
         '/settings_data_retention': (context) =>
             const SettingsDataRetentionPage(),
+        '/settings_connectivity': (context) =>
+            const SettingsConnectivityScreen(),
+        '/settings_calibration': (context) => const SettingsCalibrationScreen(),
+        '/settings_display': (context) => const SettingsDisplayScreen(),
+        '/bluetooth_scan': (context) => const BluetoothScanScreen(),
         '/saved_samples': (context) => const SavedSamplesScreen(),
         '/sample_readings': (context) {
           final args =

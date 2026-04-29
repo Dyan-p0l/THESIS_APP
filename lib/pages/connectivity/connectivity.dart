@@ -190,46 +190,50 @@ class _ConnectivityScreenState extends State<ConnectivityScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          TextButton.icon(
-                            onPressed: () {
-                              Navigator.pushNamed(context, '/history');
-                            },
-                            icon: Icon(
-                              Icons.history,
-                              color: Colors.white,
-                              size: screenWidth * 0.055,
-                            ),
-                            label: Text(
-                              "VIEW HISTORY",
-                              style: TextStyle(
-                                fontFamily: "Inter",
-                                fontSize: screenWidth * 0.036,
-                                fontWeight: FontWeight.w700,
+                          Flexible(
+                            child: TextButton.icon(
+                              onPressed: () {
+                                Navigator.pushNamed(context, '/history');
+                              },
+                              icon: Icon(
+                                Icons.history,
                                 color: Colors.white,
-                                letterSpacing: 0.5,
+                                size: screenWidth * 0.055,
+                              ),
+                              label: Text(
+                                "VIEW HISTORY",
+                                style: TextStyle(
+                                  fontFamily: "Inter",
+                                  fontSize: screenWidth * 0.030,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
                               ),
                             ),
                           ),
 
                           SizedBox(width: screenWidth * 0.06),
 
-                          TextButton.icon(
-                            onPressed: () {
-                              Navigator.pushNamed(context, '/saved_samples');
-                            },
-                            icon: Icon(
-                              Icons.folder_open_rounded,
-                              color: Colors.white,
-                              size: screenWidth * 0.055,
-                            ),
-                            label: Text(
-                              "VIEW SAMPLES",
-                              style: TextStyle(
-                                fontFamily: "Inter",
-                                fontSize: screenWidth * 0.036,
-                                fontWeight: FontWeight.w700,
+                          Flexible(
+                            child: TextButton.icon(
+                              onPressed: () {
+                                Navigator.pushNamed(context, '/saved_samples');
+                              },
+                              icon: Icon(
+                                Icons.folder_open_rounded,
                                 color: Colors.white,
-                                letterSpacing: 0.5,
+                                size: screenWidth * 0.055,
+                              ),
+                              label: Text(
+                                "VIEW SAMPLES",
+                                style: TextStyle(
+                                  fontFamily: "Inter",
+                                  fontSize: screenWidth * 0.030,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
                               ),
                             ),
                           ),
