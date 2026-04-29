@@ -39,7 +39,6 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
   double? _ideDiffPf;
 
   bool _phase1Played = false;
-  bool _phase2Played = false;
 
   String? _classificationResult;
   bool _inferring = false;
@@ -104,8 +103,8 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
       setState(() => _stableNow = value);
 
       if (value && !_phase1Played && _classificationResult == null) {
-        _phase2Played = true;
-        _ctrl2.forward();
+        _phase1Played = true;
+        _ctrl1.forward();
       }
     });
     _statusSub = bleService.statusStream.listen((value) {
@@ -151,6 +150,8 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
     _ctrl2.reset();
     _ctrl3.reset();
 
+    _phase1Played = false;
+
     if (!bleService.isConnected) {
       setState(() {
         _waiting = false;
@@ -169,7 +170,6 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
       _statusText = "Ready. Press the device button to start measuring.";
       _classificationResult = null;
       _inferring = false;
-      _phase1Played = false;
     });
 
     await bleService.sendClassification(BleService.cmdClear);
@@ -241,7 +241,11 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
   }
 
   Future<void> _playResultAnimation() async {
-    await Future.delayed(const Duration(milliseconds: 400));
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+    await _ctrl2.forward();
+
+    await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted) return;
     await _ctrl3.forward();
   }
@@ -296,7 +300,7 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
 
-    final bool showingResult = _phase2Played && !_waiting;
+    final bool showingResult = _phase1Played;
 
     final int meterLevel =
         _levelMap[_classificationResult ?? 'fresh'] ?? 0;
@@ -358,19 +362,43 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
             SizedBox(height: screenHeight * 0.015),
 
             // ── Baseline / IDE diff ──────────────────────────────────────────
-            Text( 
-              _waiting
-                  ? (_calibrationPf == null
-                      ? 'Baseline: --'
-                      : 'Baseline: ${_calibrationPf!.toStringAsFixed(3)} pF')
-                  : (_ideDiffPf == null
-                      ? 'IDE diff per channel: --'
-                      : 'IDE diff per channel: ${_ideDiffPf!.toStringAsFixed(3)} pF'),
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontWeight: FontWeight.w500,
-                fontSize: screenWidth * 0.032,
-                color: Colors.white38,
+            Padding(
+              padding: EdgeInsets.symmetric(
+                  horizontal: screenWidth * 0.04,
+                  vertical: screenHeight * 0.006),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
+                      _calibrationPf == null
+                          ? 'Baseline: --'
+                          : 'Baseline: ${_calibrationPf!.toStringAsFixed(3)} pF',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontWeight: FontWeight.w500,
+                        fontSize: screenWidth * 0.032,
+                        color: Colors.white38,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  SizedBox(width: screenWidth * 0.03),
+                  Expanded(
+                    child: Text(
+                      _ideDiffPf == null
+                          ? 'IDE diff/ch: --'
+                          : 'IDE diff/ch: ${_ideDiffPf!.toStringAsFixed(3)} pF',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontWeight: FontWeight.w500,
+                        fontSize: screenWidth * 0.032,
+                        color: Colors.white38,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
               ),
             ),
 
@@ -439,7 +467,7 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
                         ),
                       ],
                     ),
-                    SizedBox(height: screenHeight * 0.018),
+                    SizedBox(height: screenHeight * 0.025),
 
                     // ── MAIN AREA: loading GIF  OR  animated result ────────
                     Expanded(
