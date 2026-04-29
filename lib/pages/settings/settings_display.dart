@@ -1,4 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+// Keys used across both screens
+class DisplaySettingsKeys {
+  static const calibrationBaseline = 'display_calibration_baseline';
+  static const capacitanceDifference = 'display_capacitance_difference';
+  static const stabilityIndicator = 'display_stability_indicator';
+}
 
 class DisplaySettingsData {
   final bool showCalibrationBaseline;
@@ -6,9 +14,9 @@ class DisplaySettingsData {
   final bool showStabilityIndicator;
 
   const DisplaySettingsData({
-    this.showCalibrationBaseline = false,
-    this.showCapacitanceDifference = false,
-    this.showStabilityIndicator = false,
+    this.showCalibrationBaseline = true,   // ← default ON
+    this.showCapacitanceDifference = true,
+    this.showStabilityIndicator = true,
   });
 
   DisplaySettingsData copyWith({
@@ -25,47 +33,54 @@ class DisplaySettingsData {
           showStabilityIndicator ?? this.showStabilityIndicator,
     );
   }
+
+  /// Load from SharedPreferences (defaults to all true if not yet saved)
+  static Future<DisplaySettingsData> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    return DisplaySettingsData(
+      showCalibrationBaseline:
+          prefs.getBool(DisplaySettingsKeys.calibrationBaseline) ?? true,
+      showCapacitanceDifference:
+          prefs.getBool(DisplaySettingsKeys.capacitanceDifference) ?? true,
+      showStabilityIndicator:
+          prefs.getBool(DisplaySettingsKeys.stabilityIndicator) ?? true,
+    );
+  }
+
+  /// Persist all fields
+  Future<void> save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(
+        DisplaySettingsKeys.calibrationBaseline, showCalibrationBaseline);
+    await prefs.setBool(
+        DisplaySettingsKeys.capacitanceDifference, showCapacitanceDifference);
+    await prefs.setBool(
+        DisplaySettingsKeys.stabilityIndicator, showStabilityIndicator);
+  }
 }
 
-// ============================================================
-// DUMMY DATA — swap this out when your service is ready
-// ============================================================
+// ── Dummy data for preview ────────────────────────────────────
 const DisplaySettingsData kDummyDisplayData = DisplaySettingsData(
   showCalibrationBaseline: true,
   showCapacitanceDifference: true,
   showStabilityIndicator: true,
 );
 
-// ============================================================
-// RESPONSIVE HELPERS
-// ============================================================
-
-/// Scales a font size relative to a 390 px reference width (iPhone 14).
-/// Clamped to ±20 % of the base value.
+// ── Responsive helpers (unchanged) ───────────────────────────
 double _rfs(BuildContext context, double base) {
   final width = MediaQuery.of(context).size.width;
   return (base * (width / 390.0)).clamp(base * 0.8, base * 1.2);
 }
 
-/// Scales a spacing / dimension value the same way.
 double _rs(BuildContext context, double base) {
   final width = MediaQuery.of(context).size.width;
   return (base * (width / 390.0)).clamp(base * 0.75, base * 1.3);
 }
 
-// ============================================================
-// DISPLAY SETTINGS SCREEN
-// ============================================================
+// ── Screen ────────────────────────────────────────────────────
 class SettingsDisplayScreen extends StatefulWidget {
-  /// Inject real data from your service layer; falls back to dummy data.
   final DisplaySettingsData? data;
-
-  // ── Callbacks ── wire these to your service/BLoC later ────
-  /// Called whenever any toggle changes.
-  /// Receives the full updated [DisplaySettingsData] snapshot.
   final ValueChanged<DisplaySettingsData>? onSettingsChanged;
-
-  /// Fine-grained callbacks if you prefer per-field wiring.
   final ValueChanged<bool>? onCalibrationBaselineToggled;
   final ValueChanged<bool>? onCapacitanceDifferenceToggled;
   final ValueChanged<bool>? onStabilityIndicatorToggled;
@@ -85,19 +100,27 @@ class SettingsDisplayScreen extends StatefulWidget {
 
 class _SettingsDisplayScreenState extends State<SettingsDisplayScreen> {
   late DisplaySettingsData _settings;
-
-  DisplaySettingsData get _effectiveData => widget.data ?? kDummyDisplayData;
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _settings = _effectiveData;
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    // Prefer injected data, otherwise read from disk
+    final loaded = widget.data ?? await DisplaySettingsData.load();
+    if (!mounted) return;
+    setState(() {
+      _settings = loaded;
+      _loading = false;
+    });
   }
 
   @override
   void didUpdateWidget(SettingsDisplayScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Sync local state when real data arrives from outside.
     if (widget.data != oldWidget.data && widget.data != null) {
       setState(() => _settings = widget.data!);
     }
@@ -110,24 +133,30 @@ class _SettingsDisplayScreenState extends State<SettingsDisplayScreen> {
   static const Color _accentRed = Color(0xFFE05A5A);
   static const Color _labelColor = Color(0xFFB0BEC5);
 
-  // ── Helpers ───────────────────────────────────────────────
   void _update(DisplaySettingsData updated) {
     setState(() => _settings = updated);
+    updated.save(); // ← persist immediately
     widget.onSettingsChanged?.call(updated);
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return Scaffold(
+        backgroundColor: _bgColor,
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final mq = MediaQuery.of(context);
     final double hPad = (mq.size.width * 0.05).clamp(14.0, 28.0);
 
     return Scaffold(
       backgroundColor: _bgColor,
-      // ── AppBar ─────────────────────────────────────────────
       appBar: AppBar(
         backgroundColor: _bgColor,
         elevation: 0,
-        scrolledUnderElevation: 0, // keeps bg flat when scrolled under
+        scrolledUnderElevation: 0,
         leading: GestureDetector(
           onTap: () => Navigator.of(context).maybePop(),
           child: Row(
@@ -136,40 +165,32 @@ class _SettingsDisplayScreenState extends State<SettingsDisplayScreen> {
               const SizedBox(width: 8),
               const Icon(Icons.chevron_left, color: Colors.white, size: 28),
               const SizedBox(width: 2),
-              Text(
-                'Back',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: _rfs(context, 16),
-                ),
-              ),
+              Text('Back',
+                  style: TextStyle(
+                      color: Colors.white, fontSize: _rfs(context, 16))),
             ],
           ),
         ),
         leadingWidth: 80,
       ),
-      // ── Body ───────────────────────────────────────────────
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Screen title
             _ScreenTitle(accentRed: _accentRed),
-            // Scrollable content
             Expanded(
               child: SingleChildScrollView(
                 padding: EdgeInsets.symmetric(
-                  horizontal: hPad,
-                  vertical: _rs(context, 12),
-                ),
+                    horizontal: hPad, vertical: _rs(context, 12)),
                 child: Column(
                   children: [
-                    // Toggle: Calibration Baseline
                     _DisplayToggleCard(
-                      label: 'Display Calibration Baseline value\non Analysis Page',
+                      label:
+                          'Display Calibration Baseline value\non Analysis Page',
                       value: _settings.showCalibrationBaseline,
                       onChanged: (val) {
-                        _update(_settings.copyWith(showCalibrationBaseline: val));
+                        _update(_settings.copyWith(
+                            showCalibrationBaseline: val));
                         widget.onCalibrationBaselineToggled?.call(val);
                       },
                       cardColor: _cardColor,
@@ -177,14 +198,13 @@ class _SettingsDisplayScreenState extends State<SettingsDisplayScreen> {
                       labelColor: _labelColor,
                     ),
                     SizedBox(height: _rs(context, 12)),
-
-                    // Toggle: Capacitance Difference
                     _DisplayToggleCard(
                       label:
                           'Display capacitance difference per IDE\nchannel in the analysis page',
                       value: _settings.showCapacitanceDifference,
                       onChanged: (val) {
-                        _update(_settings.copyWith(showCapacitanceDifference: val));
+                        _update(_settings.copyWith(
+                            showCapacitanceDifference: val));
                         widget.onCapacitanceDifferenceToggled?.call(val);
                       },
                       cardColor: _cardColor,
@@ -192,20 +212,18 @@ class _SettingsDisplayScreenState extends State<SettingsDisplayScreen> {
                       labelColor: _labelColor,
                     ),
                     SizedBox(height: _rs(context, 12)),
-
-                    // Toggle: Stability Indicator
                     _DisplayToggleCard(
                       label: 'Display stability indicator',
                       value: _settings.showStabilityIndicator,
                       onChanged: (val) {
-                        _update(_settings.copyWith(showStabilityIndicator: val));
+                        _update(_settings.copyWith(
+                            showStabilityIndicator: val));
                         widget.onStabilityIndicatorToggled?.call(val);
                       },
                       cardColor: _cardColor,
                       accentCyan: _accentCyan,
                       labelColor: _labelColor,
                     ),
-
                     SizedBox(height: mq.padding.bottom + _rs(context, 16)),
                   ],
                 ),
@@ -218,7 +236,7 @@ class _SettingsDisplayScreenState extends State<SettingsDisplayScreen> {
   }
 }
 
-// ── Screen Title ─────────────────────────────────────────────
+// ── sub-widgets unchanged below this line ─────────────────────
 class _ScreenTitle extends StatelessWidget {
   final Color accentRed;
   const _ScreenTitle({required this.accentRed});
@@ -226,36 +244,23 @@ class _ScreenTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(
-        top: _rs(context, 4),
-        bottom: _rs(context, 20),
-      ),
+      padding: EdgeInsets.only(top: _rs(context, 4), bottom: _rs(context, 20)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.monitor,
-            color: accentRed,
-            size: _rs(context, 32),
-          ),
+          Icon(Icons.monitor, color: accentRed, size: _rs(context, 32)),
           SizedBox(width: _rs(context, 10)),
-          Text(
-            'Display',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: _rfs(context, 22),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          Text('Display',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: _rfs(context, 22),
+                  fontWeight: FontWeight.w600)),
         ],
       ),
     );
   }
 }
 
-// ── Display Toggle Card ───────────────────────────────────────
-/// A self-contained, reusable toggle card.
-/// All colours are passed in so it stays theme-agnostic.
 class _DisplayToggleCard extends StatelessWidget {
   final String label;
   final bool value;
@@ -278,30 +283,22 @@ class _DisplayToggleCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.symmetric(
-        horizontal: _rs(context, 20),
-        vertical: _rs(context, 18),
-      ),
+          horizontal: _rs(context, 20), vertical: _rs(context, 18)),
       decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(_rs(context, 14)),
-      ),
+          color: cardColor,
+          borderRadius: BorderRadius.circular(_rs(context, 14))),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Label — flex so it never pushes the switch off-screen
           Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: labelColor,
-                fontSize: _rfs(context, 14),
-                fontWeight: FontWeight.w400,
-                height: 1.4,
-              ),
-            ),
+            child: Text(label,
+                style: TextStyle(
+                    color: labelColor,
+                    fontSize: _rfs(context, 14),
+                    fontWeight: FontWeight.w400,
+                    height: 1.4)),
           ),
           SizedBox(width: _rs(context, 12)),
-          // Switch
           Switch(
             value: value,
             onChanged: onChanged,

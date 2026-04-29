@@ -449,14 +449,16 @@ class _OtherDevicesCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        Navigator.pushNamed(context, '/bluetooth_scan');
+      },
       child: _BaseCard(
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Expanded(
               child: Text(
-                'CONNECTED TO OTHER DEVICES',
+                'CONNECT TO OTHER DEVICES',
                 style: TextStyle(
                   color: const Color(0xFFB0BEC5),
                   fontSize: _rfs(context, 12),

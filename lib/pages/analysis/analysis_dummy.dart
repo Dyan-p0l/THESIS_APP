@@ -6,19 +6,18 @@ import '../../services/tflite_service.dart';
 import 'save_reading/savedialog.dart';
 import '../../db/dbhelper.dart';
 import '../../models/readings.dart';
-import '../settings/settings_display.dart';
 
 // Import the model selection service
 import '../../services/mode_selection_service.dart'; // adjust path as needed
 
-class AnalysisScreen extends StatefulWidget {
-  const AnalysisScreen({super.key});
+class AnalysisScreenDummy extends StatefulWidget {
+  const AnalysisScreenDummy({super.key});
 
   @override
-  State<AnalysisScreen> createState() => _AnalysisScreenState();
+  State<AnalysisScreenDummy> createState() => _AnalysisScreenDummyState();
 }
 
-class _AnalysisScreenState extends State<AnalysisScreen> {
+class _AnalysisScreenDummyState extends State<AnalysisScreenDummy> {
   final BleService bleService = BleService();
 
   StreamSubscription<double>? _capSub;
@@ -44,8 +43,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   // ── NEW: active model entry, loaded from SharedPreferences ─────────────────
   ModelEntry? _activeModel;
   String _activeModelLabel = ''; // shown in the UI
-
-  DisplaySettingsData _displaySettings = const DisplaySettingsData();
 
   static const _labelMap = {0: 'fresh', 1: 'moderate', 2: 'spoiled'};
   static const _labelColors = {
@@ -89,11 +86,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
 
   // ── UPDATED: loads model selection before initialising the engine ───────────
   Future<void> _initAndBegin() async {
-
-    final displaySettings = await DisplaySettingsData.load();
-    if (!mounted) return;
-    setState(() => _displaySettings = displaySettings);
-    
     // 1. Read persisted selection
     final entry = await ModelSelectionService.loadSelectedEntry();
     if (!mounted) return;
@@ -274,73 +266,43 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               ],
             ),
             SizedBox(height: screenHeight * 0.015),
-            if (_displaySettings.showCalibrationBaseline || _displaySettings.showCapacitanceDifference)
-              Padding(
-                padding: EdgeInsets.symmetric(
-                    horizontal: screenWidth * 0.04,
-                    vertical: screenHeight * 0.006),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (_displaySettings.showCalibrationBaseline)
-                      Expanded(
-                        child: Text(
-                          _calibrationPf == null
-                              ? 'Baseline: --'
-                              : 'Baseline: ${_calibrationPf!.toStringAsFixed(3)} pF',
-                          style: TextStyle(
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.w500,
-                            fontSize: screenWidth * 0.032,
-                            color: Colors.white38,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    // small spacer between the two labels when both visible
-                    if (_displaySettings.showCalibrationBaseline && _displaySettings.showCapacitanceDifference)
-                      SizedBox(width: screenWidth * 0.03),
-                    if (_displaySettings.showCapacitanceDifference)
-                      Expanded(
-                        child: Text(
-                          _ideDiffPf == null
-                              ? 'IDE diff/ch: --'
-                              : 'IDE diff/ch: ${_ideDiffPf!.toStringAsFixed(3)} pF',
-                          style: TextStyle(
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.w500,
-                            fontSize: screenWidth * 0.032,
-                            color: Colors.white38,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                  ],
+            Text(
+              _waiting
+                  ? (_calibrationPf == null
+                      ? 'Baseline: --'
+                      : 'Baseline: ${_calibrationPf!.toStringAsFixed(3)} pF')
+                  : (_ideDiffPf == null
+                      ? 'IDE diff per channel: --'
+                      : 'IDE diff per channel: ${_ideDiffPf!.toStringAsFixed(3)} pF'),
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w500,
+                fontSize: screenWidth * 0.032,
+                color: Colors.white38,
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.circle,
+                  size: screenWidth * 0.035,
+                  color: _stableNow ? Colors.green : Colors.grey,
                 ),
-              ),
-            if (_displaySettings.showStabilityIndicator)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.circle,
-                    size: screenWidth * 0.035,
-                    color: _stableNow ? Colors.green : Colors.grey,
+                SizedBox(width: screenWidth * 0.02),
+                Text(
+                  _stableNow
+                      ? "Stable sample detected"
+                      : "Waiting for stable sample",
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w600,
+                    fontSize: screenWidth * 0.035,
+                    color: _stableNow ? Colors.green : Colors.white70,
                   ),
-                  SizedBox(width: screenWidth * 0.02),
-                  Text(
-                    _stableNow
-                        ? "Stable sample detected"
-                        : "Waiting for stable sample",
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontWeight: FontWeight.w600,
-                      fontSize: screenWidth * 0.035,
-                      color: _stableNow ? Colors.green : Colors.white70,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
+            ),
             SizedBox(height: screenHeight * 0.022),
             Expanded(
               child: Container(
