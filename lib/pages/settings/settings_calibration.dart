@@ -177,11 +177,14 @@ class _BaselineValueCard extends StatelessWidget {
         color: const Color(0xFF023C51),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 4,
+        runSpacing: 4,
         children: [
           const Text(
-            'BASELINE CALIBRATION VALUE: ',
+            'BASELINE CALIBRATION VALUE:',
             style: TextStyle(
               color: Colors.white,
               fontSize: 13,

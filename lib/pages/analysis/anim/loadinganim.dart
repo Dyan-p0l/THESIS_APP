@@ -5,14 +5,13 @@ class LoadingAnim extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
+    return 
+    Center(
         child: Image.asset(
           'assets/images/onboardingpage/device_animation.gif',
           width: 300,
           height: 300,
         )
-      )
     );
   }
 }
