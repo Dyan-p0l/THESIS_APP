@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:thesis_app/pages/connectivity/connectivity.dart';
 import 'package:thesis_app/pages/staticpages/onboarding.dart';
-import 'package:thesis_app/pages/analysis/analysis.dart';
+import 'package:thesis_app/pages/analysis/analysis_dummy.dart';
 import 'package:thesis_app/pages/history/history_page.dart';
 import 'package:thesis_app/pages/savedsamplereading/saved_samples.dart';
 import 'package:thesis_app/pages/savedsamplereading/sample_readings.dart';
@@ -69,14 +69,19 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       routes: {
         '/onboarding': (context) => const OnboardingScreen(),
         '/homepage': (context) => const ConnectivityScreen(),
-        '/analysis': (context) => const AnalysisScreen(),
+        '/analysis': (context) => const AnalysisScreenDummy(),
         '/history': (context) => const HistoryPage(),
         '/settings': (context) => const SettingsPage(),
         '/settings_ml_models': (context) => const ModelPerformanceScreen(),
+<<<<<<< HEAD
         '/settings_data_retention': (context) =>
             const SettingsDataRetentionPage(),
         '/settings_connectivity': (context) =>
             const SettingsConnectivityScreen(),
+=======
+        '/settings_data_retention': (context) => const SettingsDataRetentionPage(),
+        '/settings_connectivity': (context) => const SettingsConnectivityScreen(),
+>>>>>>> 10d3df16b35c157aa8d544e0c61f2269c9687938
         '/settings_calibration': (context) => const SettingsCalibrationScreen(),
         '/settings_display': (context) => const SettingsDisplayScreen(),
         '/bluetooth_scan': (context) => const BluetoothScanScreen(),
