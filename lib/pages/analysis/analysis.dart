@@ -113,20 +113,14 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     await _beginAssessment();
   }
 
-  // Infer a human-readable failure reason from what the BleService gives us,
-  // without requiring any firmware changes.
   String _inferFailureReason(AssessmentResult result) {
     if (result.stableSampleCount == 0) {
-      return 'No stable contact was detected.\n\n'
-          'The sensor did not receive a stable signal within the allowed time. '
-          'Ensure the IDE electrodes are firmly and flatly pressed against the '
-          'fish surface and try again.';
+      return 'No stable contact detected.\n\n'
+          'Ensure the IDE sensor is firmly and flatly pressed on the fish surface, then try again.';
     }
     return 'Insufficient stable contact time.\n\n'
-        'The sensor detected ${result.stableSampleCount} stable sample(s) but '
-        'could not accumulate enough to complete the session. This may indicate '
-        'the sensor was lifted mid-measurement or the signal became unstable. '
-        'Hold the sensor steady and try again.';
+        'Only ${result.stableSampleCount} stable sample(s) were recorded. '
+        'Keep the sensor steady throughout the measurement and try again.';
   }
 
   Future<void> _beginAssessment() async {
