@@ -14,10 +14,12 @@ import 'package:thesis_app/pages/settings/settings_connectivity.dart';
 import 'package:thesis_app/pages/settings/settings_calibration.dart';
 import 'package:thesis_app/pages/settings/settings_display.dart';
 import 'package:thesis_app/pages/connectivity/bluetooth_scan.dart';
+import 'package:thesis_app/services/csv_import_service.dart'; // ← ADD THIS
 
-void main() {
-  // Ensure Flutter bindings are ready before any app-level BLE work starts.
+Future<void> main() async {
+  // ← async + Future<void>
   WidgetsFlutterBinding.ensureInitialized();
+  await CsvImportService.importReadings(skipIfExists: true);
   runApp(const MyApp());
 }
 
@@ -29,15 +31,12 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
-  // Keep BLE reconnect logic at app level, not only inside one screen.
-  // This is why MyApp was changed from StatelessWidget to StatefulWidget.
   final BleService _bleService = BleService();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Try BLE auto-connect once when the app starts.
     _bleService.startAutoConnect();
   }
 
@@ -49,9 +48,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // When the app is reopened/resumed, trigger BLE reconnection again.
-    // This fixes the old behavior where reconnect only happened after
-    // ConnectivityScreen was rebuilt.
     if (state == AppLifecycleState.resumed) {
       _bleService.startAutoConnect();
     }
