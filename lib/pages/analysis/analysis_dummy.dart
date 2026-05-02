@@ -134,9 +134,6 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
         _spinCtrl.repeat();
       }
 
-      if (!value && _phase1Played && _classificationResult == null && !_inferring) {
-        _handleMidSessionDetach();
-      }
     });
     _statusSub = bleService.statusStream.listen((value) {
       if (!mounted) return;
@@ -162,7 +159,6 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
 
     final entry = await ModelSelectionService.loadSelectedEntry();
     if (!mounted) return;
-
     setState(() {
       _activeModel = entry;
       final runtimeLabel =
@@ -233,14 +229,6 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
 
       if (result.sessionValid && result.finalPf != null) {
         
-        if (!_stableNow) {
-          setState(() {
-            _sessionValid = false;
-            _statusText = "Device detached — session invalid.";
-          });
-          return;
-        }
-
         setState(() => _inferring = true);
 
         final int labelIndex;
@@ -310,10 +298,23 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
       });
     } catch (e) {
       if (!mounted) return;
+
+      _spinCtrl.stop();
+      _spinCtrl2.stop();
+      _ctrl1.reset();
+      _ctrl2.reset();
+
       setState(() {
         _waiting = false;
         _sessionValid = false;
-        _statusText = "Error: $e";
+        _phase1Played = false;   // ← returns UI to loading screen
+        _step1Done = false;
+        _step2Done = false;
+        _inferring = false;
+        _pendingResult = null;
+        _statusText = e is StateError && e.message.contains("Disconnected")
+            ? "Device detached — session invalid. Re-attach and try again."
+            : "Error: $e";
       });
     }
   }
