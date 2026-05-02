@@ -201,7 +201,7 @@ class BleService {
   void cancelAssessment([String reason = "Assessment cancelled"]) {
     _cancelPendingAssessment(reason);
     _isArmed = false;
-    _statusController.add("Device Detached from Fish Surface. Session Cancelled");
+    _statusController.add("Cancelled");
     _stableController.add(false);
   }
 

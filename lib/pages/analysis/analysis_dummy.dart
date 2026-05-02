@@ -51,6 +51,8 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
 
   String? _pendingResult;
 
+  bool _assessmentAborted = false;
+
   // FIX 2 — explicit done-state bools so AnimatedCheck.didUpdateWidget fires
   bool _step1Done = false;
   bool _step2Done = false;
@@ -73,6 +75,8 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
   late Animation<Offset> _slide1;
   late Animation<Offset> _slide2;
   late Animation<Offset> _slide3;
+
+  
 
   static const _labelMap = {0: 'fresh', 1: 'moderate', 2: 'spoiled'};
   static const _labelColors = {
@@ -128,12 +132,13 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
       if (!mounted) return;
       setState(() => _stableNow = value);
 
+      if (_assessmentAborted) return;
+
       if (value && !_phase1Played && _classificationResult == null) {
         _phase1Played = true;
         _ctrl1.forward();
         _spinCtrl.repeat();
       }
-
     });
     _statusSub = bleService.statusStream.listen((value) {
       if (!mounted) return;
@@ -176,15 +181,20 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
   }
   
   Future<void> _beginAssessment() async {
+    _ctrl1.stop();
+    _ctrl2.stop();
+    _ctrl3.stop();
+    _spinCtrl.stop();
+    _spinCtrl2.stop();
+
     _ctrl1.reset();
     _ctrl2.reset();
     _ctrl3.reset();
     _spinCtrl.reset();
-    _spinCtrl.stop();
     _spinCtrl2.reset();
-    _spinCtrl2.stop();
 
     _phase1Played = false;
+    _assessmentAborted = false;
 
     if (!bleService.isConnected) {
       setState(() {
@@ -291,51 +301,51 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
       }
     } on TimeoutException {
       if (!mounted) return;
-      setState(() {
-        _waiting = false;
-        _sessionValid = false;
-        _statusText = "No sensor packets received in time";
-      });
-    } catch (e) {
-      if (!mounted) return;
-
+      _ctrl1.stop();
+      _ctrl2.stop();
+      _ctrl3.stop();
       _spinCtrl.stop();
       _spinCtrl2.stop();
       _ctrl1.reset();
       _ctrl2.reset();
+      _ctrl3.reset();
+      setState(() {
+        _waiting = false;
+        _sessionValid = false;
+        _phase1Played = false;
+        _step1Done = false;
+        _step2Done = false;
+        _classificationResult = null;
+        _pendingResult = null;
+        _statusText = "No sensor packets received in time";
+      });
+    } catch (e) {
+      if (!mounted) return;
+      _assessmentAborted = true;
+
+      _ctrl1.stop();
+      _ctrl2.stop();
+      _ctrl3.stop();
+      _spinCtrl.stop();
+      _spinCtrl2.stop();
+      _ctrl1.reset();
+      _ctrl2.reset();
+      _ctrl3.reset();
 
       setState(() {
         _waiting = false;
         _sessionValid = false;
-        _phase1Played = false;   // ← returns UI to loading screen
+        _phase1Played = false;
         _step1Done = false;
         _step2Done = false;
         _inferring = false;
         _pendingResult = null;
+        _classificationResult = null;
         _statusText = e is StateError && e.message.contains("Disconnected")
-            ? "Device detached — session invalid. Tap New Test and try again."
+            ? "Device detached — session invalid. Tap 'New Test' to try again."
             : "Error: $e";
       });
     }
-  }
-
-  void _handleMidSessionDetach() {
-    bleService.cancelAssessment("Device detached mid-session");
-    _spinCtrl.stop();
-    _spinCtrl2.stop();
-    _ctrl1.reset();
-    _ctrl2.reset();
-
-    setState(() { 
-      _phase1Played = false;
-      _step1Done = false;
-      _step2Done = false;
-      _waiting = false;
-      _sessionValid = false;
-      _inferring = false;
-      _pendingResult = null;
-      _statusText = "Device detached — session invalid. Re-attach and try again.";
-    });
   }
 
   Future<void> _playResultAnimation() async {
