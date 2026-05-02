@@ -313,7 +313,7 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
         _inferring = false;
         _pendingResult = null;
         _statusText = e is StateError && e.message.contains("Disconnected")
-            ? "Device detached — session invalid. Re-attach and try again."
+            ? "Device detached — session invalid. Tap New Test and try again."
             : "Error: $e";
       });
     }
