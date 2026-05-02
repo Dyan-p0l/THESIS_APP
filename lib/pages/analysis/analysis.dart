@@ -7,9 +7,7 @@ import 'save_reading/savedialog.dart';
 import '../../db/dbhelper.dart';
 import '../../models/readings.dart';
 import '../settings/settings_display.dart';
-
-// Import the model selection service
-import '../../services/mode_selection_service.dart'; // adjust path as needed
+import '../../services/mode_selection_service.dart';
 
 class AnalysisScreen extends StatefulWidget {
   const AnalysisScreen({super.key});
@@ -41,11 +39,14 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   String? _classificationResult;
   bool _inferring = false;
 
-  // ── NEW: active model entry, loaded from SharedPreferences ─────────────────
+  // Active model
   ModelEntry? _activeModel;
-  String _activeModelLabel = ''; // shown in the UI
+  String _activeModelLabel = '';
 
   DisplaySettingsData _displaySettings = const DisplaySettingsData();
+
+  // Failure reason for dialog
+  String? _failureReason;
 
   static const _labelMap = {0: 'fresh', 1: 'moderate', 2: 'spoiled'};
   static const _labelColors = {
@@ -87,33 +88,45 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     _initAndBegin();
   }
 
-  // ── UPDATED: loads model selection before initialising the engine ───────────
   Future<void> _initAndBegin() async {
-
     final displaySettings = await DisplaySettingsData.load();
     if (!mounted) return;
     setState(() => _displaySettings = displaySettings);
-    
-    // 1. Read persisted selection
+
     final entry = await ModelSelectionService.loadSelectedEntry();
     if (!mounted) return;
 
     setState(() {
       _activeModel = entry;
-      final runtimeLabel =
-          entry.runtime == ModelRuntime.tflite ? 'TFLite' : 'ONNX';
+      final runtimeLabel = entry.runtime == ModelRuntime.tflite
+          ? 'TFLite'
+          : 'ONNX';
       _activeModelLabel = '${entry.name} ($runtimeLabel)';
     });
 
-    // 2. Initialise the correct inference engine with the chosen asset path
     if (entry.runtime == ModelRuntime.tflite) {
       await TFLiteService.init(assetPath: entry.assetPath);
     } else {
       await OrtService.init(assetPath: entry.assetPath);
     }
 
-    // 3. Start the BLE assessment as usual
     await _beginAssessment();
+  }
+
+  // Infer a human-readable failure reason from what the BleService gives us,
+  // without requiring any firmware changes.
+  String _inferFailureReason(AssessmentResult result) {
+    if (result.stableSampleCount == 0) {
+      return 'No stable contact was detected.\n\n'
+          'The sensor did not receive a stable signal within the allowed time. '
+          'Ensure the IDE electrodes are firmly and flatly pressed against the '
+          'fish surface and try again.';
+    }
+    return 'Insufficient stable contact time.\n\n'
+        'The sensor detected ${result.stableSampleCount} stable sample(s) but '
+        'could not accumulate enough to complete the session. This may indicate '
+        'the sensor was lifted mid-measurement or the signal became unstable. '
+        'Hold the sensor steady and try again.';
   }
 
   Future<void> _beginAssessment() async {
@@ -135,6 +148,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       _statusText = "Ready. Press the device button to start measuring.";
       _classificationResult = null;
       _inferring = false;
+      _failureReason = null;
     });
 
     await bleService.sendClassification(BleService.cmdClear);
@@ -145,62 +159,179 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       );
 
       if (!mounted) return;
+
+      final String? failureReason = result.sessionValid
+          ? null
+          : _inferFailureReason(result);
+
       setState(() {
         _waiting = false;
         _sessionValid = result.sessionValid;
         _stableSampleCount = result.stableSampleCount;
         _capacitancePf = result.finalPf;
+        _failureReason = failureReason;
         _statusText = result.sessionValid
             ? "Assessment complete"
             : "Assessment invalid / timeout";
       });
 
-      if (result.sessionValid && result.finalPf != null) {
-        setState(() => _inferring = true);
-
-        // ── UPDATED: route to TFLite or ONNX based on active model ────────────
-        final int labelIndex;
-        final entry = _activeModel;
-        if (entry != null && entry.runtime == ModelRuntime.tflite) {
-          labelIndex = await TFLiteService.classify(result.finalPf!);
-        } else {
-          labelIndex = await OrtService.classify(result.finalPf!);
-        }
-
-        final category = _labelMap[labelIndex] ?? 'fresh';
-
-        if (!mounted) return;
-        setState(() {
-          _classificationResult = category;
-          _inferring = false;
+      if (!result.sessionValid) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showFailureDialog();
         });
-
-        await bleService.sendClassification(labelIndex);
-
-        _currentReadingId = await DBhelper.instance.insertReading(
-          Reading(
-            value: result.finalPf!,
-            carriedOutAt: DateTime.now().toIso8601String(),
-            isSaved: false,
-            category: category,
-          ),
-        );
+        return;
       }
+
+      // Valid session — run ML classification
+      setState(() => _inferring = true);
+
+      final int labelIndex;
+      final entry = _activeModel;
+      if (entry != null && entry.runtime == ModelRuntime.tflite) {
+        labelIndex = await TFLiteService.classify(result.finalPf!);
+      } else {
+        labelIndex = await OrtService.classify(result.finalPf!);
+      }
+
+      final category = _labelMap[labelIndex] ?? 'fresh';
+
+      if (!mounted) return;
+      setState(() {
+        _classificationResult = category;
+        _inferring = false;
+      });
+
+      await bleService.sendClassification(labelIndex);
+
+      _currentReadingId = await DBhelper.instance.insertReading(
+        Reading(
+          value: result.finalPf!,
+          carriedOutAt: DateTime.now().toIso8601String(),
+          isSaved: false,
+          category: category,
+        ),
+      );
     } on TimeoutException {
       if (!mounted) return;
       setState(() {
         _waiting = false;
         _sessionValid = false;
+        _failureReason =
+            'Connection timed out.\n\nNo packets were received from the sensor '
+            'within the allowed time. Ensure the device is powered on and '
+            'within range, then try again.';
         _statusText = "No sensor packets received in time";
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showFailureDialog();
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _waiting = false;
         _sessionValid = false;
+        _failureReason = null;
         _statusText = "Error: $e";
       });
     }
+  }
+
+  void _showFailureDialog() {
+    final reason = _failureReason;
+    if (reason == null || !mounted) return;
+
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        title: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF5252).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.sensors_off_rounded,
+                color: Color(0xFFFF5252),
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Assessment Failed',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.bold,
+                  fontSize: screenWidth * 0.045,
+                  color: const Color(0xFF012532),
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          reason,
+          style: const TextStyle(
+            fontFamily: 'Inter',
+            fontWeight: FontWeight.w500,
+            fontSize: 14,
+            color: Color(0xFF5E6B70),
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF5E6B70),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            child: const Text(
+              'Dismiss',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _beginAssessment();
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              backgroundColor: const Color(0xFF012532),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
+            child: const Text(
+              'Retry',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -274,11 +405,13 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               ],
             ),
             SizedBox(height: screenHeight * 0.015),
-            if (_displaySettings.showCalibrationBaseline || _displaySettings.showCapacitanceDifference)
+            if (_displaySettings.showCalibrationBaseline ||
+                _displaySettings.showCapacitanceDifference)
               Padding(
                 padding: EdgeInsets.symmetric(
-                    horizontal: screenWidth * 0.04,
-                    vertical: screenHeight * 0.006),
+                  horizontal: screenWidth * 0.04,
+                  vertical: screenHeight * 0.006,
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -297,8 +430,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                           textAlign: TextAlign.center,
                         ),
                       ),
-                    // small spacer between the two labels when both visible
-                    if (_displaySettings.showCalibrationBaseline && _displaySettings.showCapacitanceDifference)
+                    if (_displaySettings.showCalibrationBaseline &&
+                        _displaySettings.showCapacitanceDifference)
                       SizedBox(width: screenWidth * 0.03),
                     if (_displaySettings.showCapacitanceDifference)
                       Expanded(
@@ -383,7 +516,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                       ],
                     ),
                     SizedBox(height: screenHeight * 0.035),
-
                     _InfoTile(label: "Session status", value: _statusText),
                     SizedBox(height: screenHeight * 0.015),
                     _InfoTile(
@@ -401,8 +533,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                           : (_sessionValid ? Colors.green : Colors.red),
                     ),
                     SizedBox(height: screenHeight * 0.015),
-
-                    // ML classification tile
                     _InfoTile(
                       label: "ML Classification",
                       value: _inferring
@@ -411,16 +541,14 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                       valueColor: _inferring ? Colors.orange : classColor,
                     ),
                     SizedBox(height: screenHeight * 0.015),
-
-                    // ── NEW: active model tile ─────────────────────────────────
                     _InfoTile(
                       label: "Active Model",
-                      value: _activeModelLabel.isEmpty ? '--' : _activeModelLabel,
+                      value: _activeModelLabel.isEmpty
+                          ? '--'
+                          : _activeModelLabel,
                       valueColor: const Color(0xFF42A5F5),
                     ),
-
                     const Spacer(),
-
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [

@@ -73,15 +73,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         '/history': (context) => const HistoryPage(),
         '/settings': (context) => const SettingsPage(),
         '/settings_ml_models': (context) => const ModelPerformanceScreen(),
-<<<<<<< HEAD
         '/settings_data_retention': (context) =>
             const SettingsDataRetentionPage(),
         '/settings_connectivity': (context) =>
             const SettingsConnectivityScreen(),
-=======
-        '/settings_data_retention': (context) => const SettingsDataRetentionPage(),
-        '/settings_connectivity': (context) => const SettingsConnectivityScreen(),
->>>>>>> 10d3df16b35c157aa8d544e0c61f2269c9687938
         '/settings_calibration': (context) => const SettingsCalibrationScreen(),
         '/settings_display': (context) => const SettingsDisplayScreen(),
         '/bluetooth_scan': (context) => const BluetoothScanScreen(),

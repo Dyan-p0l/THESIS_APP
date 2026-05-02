@@ -7,12 +7,12 @@ import 'save_reading/savedialog.dart';
 import '../../db/dbhelper.dart';
 import '../../models/readings.dart';
 import '../../services/mode_selection_service.dart';
-import 'anim/rotatingcheck.dart';     
+import 'anim/rotatingcheck.dart';
 import 'anim/freshnessmeter.dart';
 import '../settings/settings_display.dart';
 import 'anim/result.dart';
 
-class AnalysisScreenDummy extends StatefulWidget {      
+class AnalysisScreenDummy extends StatefulWidget {
   const AnalysisScreenDummy({super.key});
 
   @override
@@ -51,11 +51,16 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
 
   String? _pendingResult;
 
-  // FIX 2 — explicit done-state bools so AnimatedCheck.didUpdateWidget fires
+  bool _assessmentAborted = false;
+
+  // Explicit done-state bools so AnimatedCheck.didUpdateWidget fires correctly
   bool _step1Done = false;
   bool _step2Done = false;
 
-  // ── Animation controllers ──────────────────────────────────────────────────
+  // Failure reason for dialog
+  String? _failureReason;
+
+  // Animation controllers
   late AnimationController _ctrl1;
   late AnimationController _ctrl2;
   late AnimationController _ctrl3;
@@ -76,7 +81,6 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
     'moderate': Color(0xFFFFAA00),
     'spoiled': Color(0xFFFF5252),
   };
-
   static const _levelMap = {'fresh': 0, 'moderate': 1, 'spoiled': 2};
 
   @override
@@ -85,18 +89,21 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
     _calibrationPf = bleService.latestCalibrationPf;
 
     _ctrl1 = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 400));
-    // FIX 1 — slowed from 500ms to 700ms so Step 2 entrance is readable
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
     _ctrl2 = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 700));
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
     _ctrl3 = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 500));
-      
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
     _spinCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-
     _spinCtrl2 = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -104,18 +111,25 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
 
     _fade1 = Tween(begin: 0.0, end: 1.0).animate(_ctrl1);
     _fade2 = Tween(begin: 0.0, end: 1.0).animate(_ctrl2);
-    _fade3 = Tween(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _ctrl3, curve: Curves.easeOut),
-    );
+    _fade3 = Tween(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _ctrl3, curve: Curves.easeOut));
 
-    _slide1 =
-        Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(_ctrl1);
-    _slide2 =
-        Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(_ctrl2);
-    _slide3 =
-        Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(_ctrl3);
+    _slide1 = Tween(
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(_ctrl1);
+    _slide2 = Tween(
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(_ctrl2);
+    _slide3 = Tween(
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(_ctrl3);
 
-    // ── BLE streams ──────────────────────────────────────────────────────────
+    // BLE streams
     _capSub = bleService.capacitanceStream.listen((value) {
       if (!mounted) return;
       setState(() => _capacitancePf = value);
@@ -123,6 +137,8 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
     _stableSub = bleService.stableStream.listen((value) {
       if (!mounted) return;
       setState(() => _stableNow = value);
+
+      if (_assessmentAborted) return;
 
       if (value && !_phase1Played && _classificationResult == null) {
         _phase1Played = true;
@@ -147,18 +163,17 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
   }
 
   Future<void> _initAndBegin() async {
-
     final displaySettings = await DisplaySettingsData.load();
     if (!mounted) return;
     setState(() => _displaySettings = displaySettings);
 
     final entry = await ModelSelectionService.loadSelectedEntry();
     if (!mounted) return;
-
     setState(() {
       _activeModel = entry;
-      final runtimeLabel =
-          entry.runtime == ModelRuntime.tflite ? 'TFLite' : 'ONNX';
+      final runtimeLabel = entry.runtime == ModelRuntime.tflite
+          ? 'TFLite'
+          : 'ONNX';
       _activeModelLabel = '${entry.name} ($runtimeLabel)';
     });
 
@@ -171,16 +186,40 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
     await _beginAssessment();
   }
 
-  Future<void> _beginAssessment() async {
+  // Infer a human-readable failure reason from what BleService gives us,
+  // without requiring any firmware changes.
+  String _inferFailureReason(AssessmentResult result) {
+    if (result.stableSampleCount == 0) {
+      return 'No stable contact was detected.\n\n'
+          'The sensor did not receive a stable signal within the allowed time. '
+          'Ensure the IDE electrodes are firmly and flatly pressed against the '
+          'fish surface and try again.';
+    }
+    return 'Insufficient stable contact time.\n\n'
+        'The sensor detected ${result.stableSampleCount} stable sample(s) but '
+        'could not accumulate enough to complete the session. This may indicate '
+        'the sensor was lifted mid-measurement or the signal became unstable. '
+        'Hold the sensor steady and try again.';
+  }
+
+  void _resetAnimationControllers() {
+    _ctrl1.stop();
+    _ctrl2.stop();
+    _ctrl3.stop();
+    _spinCtrl.stop();
+    _spinCtrl2.stop();
     _ctrl1.reset();
     _ctrl2.reset();
     _ctrl3.reset();
     _spinCtrl.reset();
-    _spinCtrl.stop();
     _spinCtrl2.reset();
-    _spinCtrl2.stop();
+  }
+
+  Future<void> _beginAssessment() async {
+    _resetAnimationControllers();
 
     _phase1Played = false;
+    _assessmentAborted = false;
 
     if (!bleService.isConnected) {
       setState(() {
@@ -200,9 +239,10 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
       _statusText = "Ready. Press the device button to start measuring.";
       _classificationResult = null;
       _inferring = false;
-      // FIX 2 — reset done-state bools on new test
       _step1Done = false;
       _step2Done = false;
+      _failureReason = null;
+      _pendingResult = null;
     });
 
     await bleService.sendClassification(BleService.cmdClear);
@@ -213,91 +253,127 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
       );
 
       if (!mounted) return;
+
+      final String? failureReason = result.sessionValid
+          ? null
+          : _inferFailureReason(result);
+
       setState(() {
         _waiting = false;
         _sessionValid = result.sessionValid;
         _stableSampleCount = result.stableSampleCount;
         _capacitancePf = result.finalPf;
+        _failureReason = failureReason;
         _statusText = result.sessionValid
             ? "Assessment complete"
             : "Assessment invalid / timeout";
       });
 
-      if (result.sessionValid && result.finalPf != null) {
-        setState(() => _inferring = true);
-
-        final int labelIndex;
-        final entry = _activeModel;
-        if (entry != null && entry.runtime == ModelRuntime.tflite) {
-          labelIndex = await TFLiteService.classify(result.finalPf!);
-        } else {
-          labelIndex = await OrtService.classify(result.finalPf!);
-        }
-
-        final category = _labelMap[labelIndex] ?? 'fresh';
-
-        if (!mounted) return;
-
-        setState(() {
-          _pendingResult = category;
-          _inferring = false;
-        });
-
-        // FIX 5 — longer pause before Step 2 so Step 1 feels settled
-        await Future.delayed(const Duration(milliseconds: 400));
-        if (!mounted) return;
-
-        _spinCtrl2.repeat();
-
-        // Step 2 slides in — Step 1 (_spinCtrl) still spinning throughout
-        await _ctrl2.forward();
-
-        // FIX 2 — setState triggers AnimatedCheck.didUpdateWidget for Step 1
+      if (!result.sessionValid) {
+        // Stop any spinning animation that may have started during contact
         _spinCtrl.stop();
-        if (mounted) setState(() => _step1Done = true);
-
-        // Hand off: Step 2 starts its own independent spin
-        // await Future.delayed(const Duration(milliseconds: 150));
-        // if (!mounted) return;
-        // _spinCtrl2.repeat();
-
-        await Future.delayed(const Duration(milliseconds: 700));
-        if (!mounted) return;
         _spinCtrl2.stop();
-        // FIX 2 — setState triggers AnimatedCheck.didUpdateWidget for Step 2
-        if (mounted) setState(() => _step2Done = true);
-
-        setState(() {
-          _classificationResult = _pendingResult;
-        }); 
-        
-        _playResultAnimation();
-
-        await bleService.sendClassification(labelIndex);
-
-        _currentReadingId = await DBhelper.instance.insertReading(
-          Reading(
-            value: result.finalPf!,
-            carriedOutAt: DateTime.now().toIso8601String(),
-            isSaved: false,
-            category: category,
-          ),
-        );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showFailureDialog();
+        });
+        return;
       }
+
+      // Valid session — run ML classification
+      setState(() => _inferring = true);
+
+      final int labelIndex;
+      final entry = _activeModel;
+      if (entry != null && entry.runtime == ModelRuntime.tflite) {
+        labelIndex = await TFLiteService.classify(result.finalPf!);
+      } else {
+        labelIndex = await OrtService.classify(result.finalPf!);
+      }
+
+      final category = _labelMap[labelIndex] ?? 'fresh';
+
+      if (!mounted) return;
+
+      setState(() {
+        _pendingResult = category;
+        _inferring = false;
+      });
+
+      // Pause before Step 2 so Step 1 feels settled
+      await Future.delayed(const Duration(milliseconds: 400));
+      if (!mounted) return;
+
+      _spinCtrl2.repeat();
+
+      // Step 2 slides in — Step 1 (_spinCtrl) still spinning throughout
+      await _ctrl2.forward();
+
+      // Step 1 check mark
+      _spinCtrl.stop();
+      if (mounted) setState(() => _step1Done = true);
+
+      await Future.delayed(const Duration(milliseconds: 700));
+      if (!mounted) return;
+
+      _spinCtrl2.stop();
+      // Step 2 check mark
+      if (mounted) setState(() => _step2Done = true);
+
+      setState(() {
+        _classificationResult = _pendingResult;
+      });
+
+      _playResultAnimation();
+
+      await bleService.sendClassification(labelIndex);
+
+      _currentReadingId = await DBhelper.instance.insertReading(
+        Reading(
+          value: result.finalPf!,
+          carriedOutAt: DateTime.now().toIso8601String(),
+          isSaved: false,
+          category: category,
+        ),
+      );
     } on TimeoutException {
       if (!mounted) return;
+      _resetAnimationControllers();
       setState(() {
         _waiting = false;
         _sessionValid = false;
+        _phase1Played = false;
+        _step1Done = false;
+        _step2Done = false;
+        _classificationResult = null;
+        _pendingResult = null;
+        _failureReason =
+            'Connection timed out.\n\nNo packets were received from the sensor '
+            'within the allowed time. Ensure the device is powered on and '
+            'within range, then try again.';
         _statusText = "No sensor packets received in time";
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showFailureDialog();
       });
     } catch (e) {
       if (!mounted) return;
+      _assessmentAborted = true;
+      _resetAnimationControllers();
       setState(() {
         _waiting = false;
         _sessionValid = false;
-        _statusText = "Error: $e";
+        _phase1Played = false;
+        _step1Done = false;
+        _step2Done = false;
+        _inferring = false;
+        _pendingResult = null;
+        _classificationResult = null;
+        _failureReason = null;
+        _statusText = e is StateError && e.message.contains("Disconnected")
+            ? "Device detached — session invalid. Tap 'New Test' to try again."
+            : "Error: $e";
       });
+      // No dialog for unexpected errors — status text is sufficient
     }
   }
 
@@ -305,6 +381,104 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
     await _ctrl3.forward();
+  }
+
+  void _showFailureDialog() {
+    final reason = _failureReason;
+    if (reason == null || !mounted) return;
+
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        title: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF5252).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.sensors_off_rounded,
+                color: Color(0xFFFF5252),
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Assessment Failed',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.bold,
+                  fontSize: screenWidth * 0.045,
+                  color: const Color(0xFF012532),
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          reason,
+          style: const TextStyle(
+            fontFamily: 'Inter',
+            fontWeight: FontWeight.w500,
+            fontSize: 14,
+            color: Color(0xFF5E6B70),
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF5E6B70),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            child: const Text(
+              'Dismiss',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _beginAssessment();
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              backgroundColor: const Color(0xFF012532),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
+            child: const Text(
+              'Retry',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -323,21 +497,21 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
     super.dispose();
   }
 
-  // FIX 3 — isDone is now an explicit bool, not ctrl.isCompleted
-  // FIX 4 — connector has no SlideTransition, only FadeTransition
   Widget _buildStep(
-      String text, AnimationController ctrl, Animation<double> fade,
-      Animation<Offset> slide,
-      {required bool isDone,
-       AnimationController? spinCtrl,
-       bool showConnector = false}) {
-
-    const double connectorLeftPad = 17; // centers 2px line on 24px icon
+    String text,
+    AnimationController ctrl,
+    Animation<double> fade,
+    Animation<Offset> slide, {
+    required bool isDone,
+    AnimationController? spinCtrl,
+    bool showConnector = false,
+  }) {
+    const double connectorLeftPad = 17;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // FIX 4 — fade only, no slide, so the line grows in place
+        // Fade only (no slide) so the connector line grows in place
         if (showConnector)
           Padding(
             padding: const EdgeInsets.only(left: connectorLeftPad),
@@ -359,11 +533,7 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
             position: slide,
             child: Row(
               children: [
-                // FIX 3 — pass explicit isDone bool
-                AnimatedCheck(
-                  isDone: isDone,
-                  externalSpinCtrl: spinCtrl,
-                ),
+                AnimatedCheck(isDone: isDone, externalSpinCtrl: spinCtrl),
                 const SizedBox(width: 12),
                 Text(
                   text,
@@ -391,8 +561,7 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
 
     final bool showingResult = _phase1Played;
 
-    final int meterLevel =
-        _levelMap[_classificationResult ?? 'fresh'] ?? 0;
+    final int meterLevel = _levelMap[_classificationResult ?? 'fresh'] ?? 0;
 
     final classColor = _classificationResult != null
         ? _labelColors[_classificationResult!]!
@@ -415,7 +584,6 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
               ),
             ),
             SizedBox(height: screenHeight * 0.012),
-
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -447,12 +615,13 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
               ],
             ),
             SizedBox(height: screenHeight * 0.015),
-
-            if (_displaySettings.showCalibrationBaseline || _displaySettings.showCapacitanceDifference)
+            if (_displaySettings.showCalibrationBaseline ||
+                _displaySettings.showCapacitanceDifference)
               Padding(
                 padding: EdgeInsets.symmetric(
-                    horizontal: screenWidth * 0.04,
-                    vertical: screenHeight * 0.006),
+                  horizontal: screenWidth * 0.04,
+                  vertical: screenHeight * 0.006,
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -471,7 +640,8 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
                           textAlign: TextAlign.center,
                         ),
                       ),
-                    if (_displaySettings.showCalibrationBaseline && _displaySettings.showCapacitanceDifference)
+                    if (_displaySettings.showCalibrationBaseline &&
+                        _displaySettings.showCapacitanceDifference)
                       SizedBox(width: screenWidth * 0.03),
                     if (_displaySettings.showCapacitanceDifference)
                       Expanded(
@@ -491,7 +661,6 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
                   ],
                 ),
               ),
-
             if (_displaySettings.showStabilityIndicator)
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -515,9 +684,7 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
                   ),
                 ],
               ),
-              
             SizedBox(height: screenHeight * 0.022),
-
             Expanded(
               child: Container(
                 width: double.infinity,
@@ -540,9 +707,11 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
                       crossAxisAlignment: CrossAxisAlignment.center,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.info_outline,
-                            color: const Color(0xFF868686),
-                            size: screenWidth * 0.065),
+                        Icon(
+                          Icons.info_outline,
+                          color: const Color(0xFF868686),
+                          size: screenWidth * 0.065,
+                        ),
                         SizedBox(width: screenWidth * 0.02),
                         Text(
                           'Please ensure proper\ncontact with fish surface.',
@@ -557,16 +726,18 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
                       ],
                     ),
                     SizedBox(height: screenHeight * 0.015),
-
                     Expanded(
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 400),
                         child: showingResult
-                            ? _buildAnimatedResult(meterLevel, classColor, screenHeight)
+                            ? _buildAnimatedResult(
+                                meterLevel,
+                                classColor,
+                                screenHeight,
+                              )
                             : _buildLoadingArea(screenHeight),
                       ),
                     ),
-
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -596,8 +767,9 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
                               foregroundColor: const Color(0XFF40E0D0),
                               backgroundColor: const Color(0XFF012532),
                               shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(screenWidth * 0.05),
+                                borderRadius: BorderRadius.circular(
+                                  screenWidth * 0.05,
+                                ),
                               ),
                             ),
                             child: Text(
@@ -617,8 +789,9 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
                               backgroundColor: const Color(0XFF40E0D0),
                               disabledBackgroundColor: Colors.grey.shade300,
                               shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(screenWidth * 0.05),
+                                borderRadius: BorderRadius.circular(
+                                  screenWidth * 0.05,
+                                ),
                               ),
                             ),
                             child: Text(
@@ -666,14 +839,18 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
     );
   }
 
-  Widget _buildAnimatedResult(int meterLevel, Color classColor, double screenHeight) {
+  Widget _buildAnimatedResult(
+    int meterLevel,
+    Color classColor,
+    double screenHeight,
+  ) {
     return SingleChildScrollView(
       key: const ValueKey('result'),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Center(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center, // ← was start
+            crossAxisAlignment: CrossAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
               IntrinsicWidth(
@@ -683,13 +860,17 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
                   children: [
                     _buildStep(
                       "FRESHNESS EVALUATION",
-                      _ctrl1, _fade1, _slide1,
+                      _ctrl1,
+                      _fade1,
+                      _slide1,
                       isDone: _step1Done,
                       spinCtrl: _spinCtrl,
                     ),
                     _buildStep(
                       "CLASSIFICATION:",
-                      _ctrl2, _fade2, _slide2,
+                      _ctrl2,
+                      _fade2,
+                      _slide2,
                       isDone: _step2Done,
                       spinCtrl: _spinCtrl2,
                       showConnector: true,
@@ -697,13 +878,13 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
                   ],
                 ),
               ),
-              SizedBox(height: screenHeight * 0.018), // ← tighter (was 0.025)
+              SizedBox(height: screenHeight * 0.018),
               AnimatedBuilder(
                 animation: _ctrl3,
                 builder: (context, child) => Opacity(
                   opacity: _fade3.value,
                   child: Transform.scale(
-                    scale: 0.85 + (0.15 * _ctrl3.value), // 0.85 → 1.0
+                    scale: 0.85 + (0.15 * _ctrl3.value),
                     child: child,
                   ),
                 ),
@@ -724,7 +905,7 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
                       (_classificationResult ?? '').toUpperCase(),
                       style: TextStyle(
                         fontFamily: 'Inter',
-                        fontSize: 28,           // ← was 36
+                        fontSize: 28,
                         fontWeight: FontWeight.bold,
                         color: classColor,
                       ),
@@ -736,7 +917,7 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
                           : 'Model: $_activeModelLabel',
                       style: const TextStyle(
                         fontFamily: 'Inter',
-                        fontSize: 11,           // ← was 12
+                        fontSize: 11,
                         color: Color(0xFF42A5F5),
                       ),
                     ),
