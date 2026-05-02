@@ -55,6 +55,10 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
   bool _step1Done = false;
   bool _step2Done = false;
 
+  static const int _timeoutSeconds = 20;
+  int _remainingSeconds = 20;
+  Timer? _countdownTimer;
+
   // ── Animation controllers ──────────────────────────────────────────────────
   late AnimationController _ctrl1;
   late AnimationController _ctrl2;
@@ -129,6 +133,10 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
         _ctrl1.forward();
         _spinCtrl.repeat();
       }
+
+      if (!value && _phase1Played && _classificationResult == null && !_inferring) {
+        _handleMidSessionDetach();
+      }
     });
     _statusSub = bleService.statusStream.listen((value) {
       if (!mounted) return;
@@ -170,7 +178,7 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
 
     await _beginAssessment();
   }
-
+  
   Future<void> _beginAssessment() async {
     _ctrl1.reset();
     _ctrl2.reset();
@@ -224,6 +232,15 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
       });
 
       if (result.sessionValid && result.finalPf != null) {
+        
+        if (!_stableNow) {
+          setState(() {
+            _sessionValid = false;
+            _statusText = "Device detached — session invalid.";
+          });
+          return;
+        }
+
         setState(() => _inferring = true);
 
         final int labelIndex;
@@ -299,6 +316,25 @@ class _AnalysisScreenDummyState extends State<AnalysisScreenDummy>
         _statusText = "Error: $e";
       });
     }
+  }
+
+  void _handleMidSessionDetach() {
+    bleService.cancelAssessment("Device detached mid-session");
+    _spinCtrl.stop();
+    _spinCtrl2.stop();
+    _ctrl1.reset();
+    _ctrl2.reset();
+
+    setState(() { 
+      _phase1Played = false;
+      _step1Done = false;
+      _step2Done = false;
+      _waiting = false;
+      _sessionValid = false;
+      _inferring = false;
+      _pendingResult = null;
+      _statusText = "Device detached — session invalid. Re-attach and try again.";
+    });
   }
 
   Future<void> _playResultAnimation() async {
